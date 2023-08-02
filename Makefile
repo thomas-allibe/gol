@@ -1,20 +1,39 @@
-CC=gcc
-CFLAGS=
-INCFLAGS=
-EXEC=bonk
+CC = gcc
+CFLAGS = -std=c2x -Wall -pedantic -Wextra
+INCFLAGS = -L /usr/local/include
+LINKFLAGS = -lm -l:libraylib.a -I /usr/local/lib
+EXEC = bonk
+
+SRC = $(wildcard src/*.c)
+OBJ = $(addprefix obj/,$(notdir $(SRC:.c=.o)))
+
+print:
+	@echo $(OBJ)
 
 all: start build/$(EXEC)
 	@echo ""
 	@echo "********** COMPILATION DONE **********"
 	@echo ""
 
-build/$(EXEC): src/main.c
-	$(CC) -o $@ $<
+build/$(EXEC): $(OBJ)
+	$(CC) -o $@ $^ $(LINKFLAGS)
+
+obj/%.o: src/%.c
+	$(CC) -o $@ -c $< $(CFLAGS) $(INCFLAGS)
+
+#build/$(EXEC): src/main.c
+#	$(CC) -o $@ $< $(CFLAGS) $(LIBFLAGS) $(LINKFLAGS)
 
 start:
 	@echo ""
 	@echo "********** COMPILATION START *********"
 	@echo ""
+
+#
+#  CLEANUP
+#
+
+#.PHONY clean-build clean-obj clean-all
 
 clean-build:
 	@echo ""
