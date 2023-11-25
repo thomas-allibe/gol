@@ -1,0 +1,71 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-std=c2x",
+      "-Wall",
+      "-pedantic",
+      "-Wextra",
+      "-Wconversion",
+      "-Werror",
+      "-g",
+      "-I",
+      "/usr/local/include",
+      "-I",
+      "./include",
+      "-o",
+      "obj/gol.o",
+      "src/gol.c"
+    ],
+    "directory": "/home/toto/Dev/gol",
+    "file": "/home/toto/Dev/gol/src/gol.c",
+    "output": "/home/toto/Dev/gol/obj/gol.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-std=c2x",
+      "-Wall",
+      "-pedantic",
+      "-Wextra",
+      "-Wconversion",
+      "-Werror",
+      "-g",
+      "-I",
+      "/usr/local/include",
+      "-I",
+      "./include",
+      "-o",
+      "obj/layout.o",
+      "src/layout.c"
+    ],
+    "directory": "/home/toto/Dev/gol",
+    "file": "/home/toto/Dev/gol/src/layout.c",
+    "output": "/home/toto/Dev/gol/obj/layout.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-std=c2x",
+      "-Wall",
+      "-pedantic",
+      "-Wextra",
+      "-Wconversion",
+      "-Werror",
+      "-g",
+      "-I",
+      "/usr/local/include",
+      "-I",
+      "./include",
+      "-o",
+      "obj/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/toto/Dev/gol",
+    "file": "/home/toto/Dev/gol/src/main.c",
+    "output": "/home/toto/Dev/gol/obj/main.o"
+  }
+]

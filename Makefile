@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -std=c2x -Wall -pedantic -Wextra
-INCFLAGS = -L /usr/local/include
-LINKFLAGS = -lm -l:libraylib.a -I /usr/local/lib
-EXEC = bonk
+CFLAGS = -std=c2x -Wall -pedantic -Wextra -Wconversion -Werror -g
+INCFLAGS = -I /usr/local/include -I ./include
+LINKFLAGS = -lm -l:libraylib.a -L /usr/local/lib
+EXEC = gol
 
 SRC = $(wildcard src/*.c)
 OBJ = $(addprefix obj/,$(notdir $(SRC:.c=.o)))
