@@ -13,7 +13,7 @@
 #define GOL_DEBUG_TITLE_FONT_SIZE 32.0f
 
 #define GOL_FPS 60
-#define GOL_CAMERA_MAX_VELOCITY 10.0f
+#define GOL_CAMERA_MAX_VELOCITY 15.0f
 #define GOL_GRID_COLOR LIGHTGRAY
 
 typedef struct GolCtx {
@@ -28,10 +28,7 @@ typedef struct GolCtx {
   double move_left_start;
   double move_up_start;
   double move_down_start;
-  float velocity_right; // Camera velocity to the right
-  float velocity_left;
-  float velocity_up;
-  float velocity_down;
+  Vector2 velocity; // Camera velocity
 
   bool show_dbg; // Shoul show debug info ?
 } GolCtx;
@@ -40,12 +37,12 @@ int gol_run(GolCtx *const self, int argc, char *argv[]);
 
 int gol_init(GolCtx *const self);
 
+void gol_event(GolCtx *const self);
+void gol_update(GolCtx *const self);
+
 void gol_draw(GolCtx *const self);
 void gol_draw_grid(const GolCtx *const self);
 void gol_draw_dbg(const GolCtx *const self);
-
-void gol_watch_move_keys(GolCtx *const self);
-void gol_update_position(GolCtx *const self);
 
 // Utility
 float gol_move_ease(const double cur_time, const double start_time);
