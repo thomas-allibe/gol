@@ -20,7 +20,7 @@ typedef struct GolCtx {
   Rectangle screen;     // Screen bounds
   Rectangle g_screen;   // Game screen bounds
   Rectangle dbg_screen; // Debug screen bounds
-  Vector2 cam_pos;      // "Camera" position
+  Vector2 cam_pos;      // "Camera" position relative to the world
 
   float grid_width; // Width (and height) of grid
 

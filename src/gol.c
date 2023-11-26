@@ -8,6 +8,10 @@ int gol_run(GolCtx *const self, int argc, char *argv[]) {
 
   gol_init(self);
 
+#ifdef GOL_DEBUG
+  SetTraceLogLevel(LOG_ALL);
+#endif /* ifdef GOL_DEBUG */
+
   // Main game loop
   while (!WindowShouldClose()) // Detect window close button or ESC key
   {
@@ -55,10 +59,18 @@ void gol_event(GolCtx *const self) {
     self->screen.height = (float)GetRenderHeight();
   }
 
+  // Enable Debug View
+  //
 #ifdef GOL_DEBUG
-  if (IsKeyPressed(KEY_D))
+  if (IsKeyPressed(KEY_D)) {
     self->show_dbg = !self->show_dbg;
+  }
 #endif /* ifdef GOL_DEBUG */
+
+  if (IsKeyPressed(KEY_C)) {
+    self->cam_pos.x = 0.0f;
+    self->cam_pos.y = 0.0f;
+  }
 
   // Mouse grid dragging
   //
@@ -164,9 +176,14 @@ void gol_draw_grid(const GolCtx *const self) {
       .x = (quotient.x - floorf(quotient.x)) * self->grid_width,
       .y = (quotient.y - floorf(quotient.y)) * self->grid_width};
 
+  TraceLog(LOG_DEBUG, "quotient: {x: %f, y: %f}, delta: {x: %f, y: %f}\r",
+           quotient.x, quotient.y, delta.x, delta.y);
+
+  Vector2 d2 = {.x = self->g_screen.width / (2.0f * self->grid_width),
+                .y = self->g_screen.height / (2.0f * self->grid_width)};
   // Draw Vertical Lines
   //
-  for (float i = self->g_screen.x + delta.x;
+  for (float i = self->g_screen.x + delta.x + d2.x;
        i <= self->g_screen.x + self->g_screen.width; i += self->grid_width) {
     start_pos.x = i;
     start_pos.y = self->g_screen.y;
@@ -190,7 +207,7 @@ void gol_draw_grid(const GolCtx *const self) {
 
   // Draw Horizontal Lines
   //
-  for (float i = self->g_screen.y + delta.y;
+  for (float i = self->g_screen.y + delta.y - d2.y;
        i <= self->g_screen.y + self->g_screen.height; i += self->grid_width) {
     start_pos.x = self->g_screen.x;
     start_pos.y = i;
@@ -213,6 +230,12 @@ void gol_draw_grid(const GolCtx *const self) {
 }
 
 void gol_draw_dbg(const GolCtx *const self) {
+  const Vector2 mouse_pos = GetMousePosition();
+  const Vector2 mouse_pos_rel_g = {
+      .x = mouse_pos.x - self->g_screen.x,
+      .y = mouse_pos.y -
+           self->g_screen.y}; // Mouse position relative to g_screen
+
   // Draw a center cross to g_screen
   //
   DrawLine((int)(self->g_screen.x + self->g_screen.width / 2.0f),
@@ -229,8 +252,23 @@ void gol_draw_dbg(const GolCtx *const self) {
   const Vector2 origin = {
       .x = self->cam_pos.x + self->g_screen.x + self->g_screen.width / 2.0f,
       .y = self->cam_pos.y + self->g_screen.y + self->g_screen.height / 2.0f};
-  if (CheckCollisionPointRec(origin, self->g_screen))
+  if (CheckCollisionPointRec(origin, self->g_screen)) {
     DrawCircle((int)origin.x, (int)origin.y, 3.0f, RED);
+  }
+
+  // Draw mouse coordinates relative to screen
+  //
+  DrawText(TextFormat("s(%d, %d)", (int)mouse_pos.x, (int)mouse_pos.y),
+           (int)mouse_pos.x + 20, (int)mouse_pos.y, GOL_DEBUG_FONT_SIZE, RED);
+
+  // Draw mouse coordinates relative to g_screen
+  //
+  if (CheckCollisionPointRec(mouse_pos, self->g_screen)) {
+    DrawText(
+        TextFormat("g(%d, %d)", (int)mouse_pos_rel_g.x, (int)mouse_pos_rel_g.y),
+        (int)mouse_pos.x + 20, (int)(mouse_pos.y + GOL_DEBUG_FONT_SIZE + 5.0f),
+        GOL_DEBUG_FONT_SIZE, RED);
+  }
 
   layout_start(self->dbg_screen, DISP_VERT, 2);
 
@@ -250,11 +288,9 @@ void gol_draw_dbg(const GolCtx *const self) {
   DrawFPS((int)fps_rec.x, (int)fps_rec.y);
 
   const Rectangle velocity_rec = layout_get();
-  char velocity_str[75];
-  sprintf(velocity_str, "Camera Velocity (px/s): \n\tx: %f\n\ty: %f",
-          self->velocity.x, self->velocity.y);
-  DrawText(velocity_str, (int)velocity_rec.x, (int)velocity_rec.y,
-           GOL_DEBUG_FONT_SIZE, RED);
+  DrawText(TextFormat("Camera Velocity (px/s): \n\tx: %f\n\ty: %f",
+                      self->velocity.x, self->velocity.y),
+           (int)velocity_rec.x, (int)velocity_rec.y, GOL_DEBUG_FONT_SIZE, RED);
 }
 
 float gol_move_ease(const double cur_time, const double start_time) {
@@ -263,6 +299,6 @@ float gol_move_ease(const double cur_time, const double start_time) {
   return (float)(1.0 - exp(-2.0 * delta));
 }
 void gol_print_rec(const Rectangle rec, const char *const prefix) {
-  printf("%s {x: %f, y: %f, w: %f, h: %f}\n", prefix, rec.x, rec.y, rec.width,
-         rec.height);
+  TraceLog(LOG_DEBUG, "%s {x: %f, y: %f, w: %f, h: %f}\n", prefix, rec.x, rec.y,
+           rec.width, rec.height);
 }
