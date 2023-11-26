@@ -17,7 +17,7 @@ void layout_start(Rectangle rec, ContentDisposition disposition, u32 size) {
     tmp_rec.height /= (float)size;
     // Loop backwards
     for (u32 i = size; i-- > 0;) {
-      tmp_rec.y = tmp_rec.height * (float)i;
+      tmp_rec.y = rec.y + tmp_rec.height * (float)i;
 
       layout_stack[layout_stack_ptr++] = tmp_rec;
     }
@@ -28,7 +28,7 @@ void layout_start(Rectangle rec, ContentDisposition disposition, u32 size) {
     tmp_rec.width /= (float)size;
     // Loop backwards
     for (u32 i = size; i-- > 0;) {
-      tmp_rec.x = tmp_rec.width * (float)i;
+      tmp_rec.x = rec.x + tmp_rec.width * (float)i;
 
       layout_stack[layout_stack_ptr++] = tmp_rec;
     }
