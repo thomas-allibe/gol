@@ -170,35 +170,29 @@ void gol_draw_grid(const GolCtx *const self) {
   Vector2 start_pos, end_pos;
 
   // Compute interval between cam_pos and the closest lines from the left/top
-  const Vector2 quotient = {.x = self->cam_pos.x / self->grid_width,
-                            .y = self->cam_pos.y / self->grid_width};
-  const Vector2 delta = {
-      .x = (quotient.x - floorf(quotient.x)) * self->grid_width,
-      .y = (quotient.y - floorf(quotient.y)) * self->grid_width};
+  const Vector2 grid_frac = {.x = self->cam_pos.x / self->grid_width,
+                             .y = self->cam_pos.y / self->grid_width};
+  const Vector2 offset = {
+      .x = (grid_frac.x - floorf(grid_frac.x)) * self->grid_width,
+      .y = (grid_frac.y - floorf(grid_frac.y)) * self->grid_width};
 
-  TraceLog(LOG_DEBUG, "quotient: {x: %f, y: %f}, delta: {x: %f, y: %f}\r",
-           quotient.x, quotient.y, delta.x, delta.y);
-
-  Vector2 d2 = {.x = self->g_screen.width / (2.0f * self->grid_width),
-                .y = self->g_screen.height / (2.0f * self->grid_width)};
   // Draw Vertical Lines
   //
-  for (float i = self->g_screen.x + delta.x + d2.x;
-       i <= self->g_screen.x + self->g_screen.width; i += self->grid_width) {
-    start_pos.x = i;
+  for (float x = self->g_screen.x + offset.x;
+       x <= self->g_screen.x + self->g_screen.width; x += self->grid_width) {
+    start_pos.x = x;
     start_pos.y = self->g_screen.y;
-    end_pos.x = start_pos.x;
+    end_pos.x = x;
     end_pos.y = self->g_screen.y + self->g_screen.height;
 
     DrawLineV(start_pos, end_pos, GOL_GRID_COLOR);
 
 #ifdef GOL_DEBUG
-    char str_coord[15];
     if (self->show_dbg) {
       // x coord on each line
-      sprintf(str_coord, "x: %d", (int)start_pos.x);
-      DrawTextPro(GetFontDefault(), str_coord,
-                  (Vector2){.x = start_pos.x, .y = self->g_screen.y + 5},
+      DrawTextPro(GetFontDefault(),
+                  TextFormat("x: %d", (int)(x - self->g_screen.x)),
+                  (Vector2){.x = x, .y = self->g_screen.y + 5},
                   (Vector2){.x = 0.0f, .y = 10.0f}, 90.0f, 10.0f, 2.0f, PURPLE);
     }
 #endif /* ifdef GOL_DEBUG                                                      \
@@ -207,23 +201,22 @@ void gol_draw_grid(const GolCtx *const self) {
 
   // Draw Horizontal Lines
   //
-  for (float i = self->g_screen.y + delta.y - d2.y;
-       i <= self->g_screen.y + self->g_screen.height; i += self->grid_width) {
+  for (float y = self->g_screen.y + offset.y;
+       y <= self->g_screen.y + self->g_screen.height; y += self->grid_width) {
     start_pos.x = self->g_screen.x;
-    start_pos.y = i;
+    start_pos.y = y;
     end_pos.x = self->g_screen.x + self->g_screen.width;
-    end_pos.y = start_pos.y;
+    end_pos.y = y;
 
     DrawLineV(start_pos, end_pos, GOL_GRID_COLOR);
 
 #ifdef GOL_DEBUG
-    char str_coord[15];
     if (self->show_dbg) {
       // x coord on each line
-      sprintf(str_coord, "y: %d", (int)start_pos.y);
-      DrawTextPro(GetFontDefault(), str_coord,
-                  (Vector2){.x = self->g_screen.x + 5, .y = start_pos.y},
-                  (Vector2){0}, 0.0f, 10.0f, 2.0f, PURPLE);
+      DrawTextPro(GetFontDefault(),
+                  TextFormat("y: %d", (int)(y - self->g_screen.y)),
+                  (Vector2){.x = self->g_screen.x + 5, .y = y}, (Vector2){0},
+                  0.0f, 10.0f, 2.0f, PURPLE);
     }
 #endif /* ifdef GOL_DEBUG */
   }
@@ -249,9 +242,12 @@ void gol_draw_dbg(const GolCtx *const self) {
 
   // Draw Point at Origin
   //
-  const Vector2 origin = {
-      .x = self->cam_pos.x + self->g_screen.x + self->g_screen.width / 2.0f,
-      .y = self->cam_pos.y + self->g_screen.y + self->g_screen.height / 2.0f};
+  // const Vector2 origin = {
+  //     .x = self->cam_pos.x + self->g_screen.x + self->g_screen.width / 2.0f,
+  //     .y = self->cam_pos.y + self->g_screen.y + self->g_screen.height
+  //     / 2.0f};
+  const Vector2 origin = {.x = self->cam_pos.x + self->g_screen.x,
+                          .y = self->cam_pos.y + self->g_screen.y};
   if (CheckCollisionPointRec(origin, self->g_screen)) {
     DrawCircle((int)origin.x, (int)origin.y, 3.0f, RED);
   }
@@ -270,10 +266,15 @@ void gol_draw_dbg(const GolCtx *const self) {
         GOL_DEBUG_FONT_SIZE, RED);
   }
 
-  layout_start(self->dbg_screen, DISP_VERT, 2);
-
   // Draw Debug Panel
   //
+  //
+  // Draw FPS top left debug screen
+  //
+  DrawFPS((int)self->dbg_screen.x, (int)self->dbg_screen.y);
+
+  layout_start(self->dbg_screen, DISP_VERT, 3);
+
   const Rectangle title_rec = layout_get();
   const char *const title = "Debug Info:";
   const float title_x_offset =
@@ -282,15 +283,21 @@ void gol_draw_dbg(const GolCtx *const self) {
   DrawText(title, (int)(title_rec.x + title_x_offset), (int)title_rec.y,
            GOL_DEBUG_TITLE_FONT_SIZE, RED);
 
-  layout_start(layout_get(), DISP_HORIZ, 2);
-
-  const Rectangle fps_rec = layout_get();
-  DrawFPS((int)fps_rec.x, (int)fps_rec.y);
-
   const Rectangle velocity_rec = layout_get();
   DrawText(TextFormat("Camera Velocity (px/s): \n\tx: %f\n\ty: %f",
                       self->velocity.x, self->velocity.y),
            (int)velocity_rec.x, (int)velocity_rec.y, GOL_DEBUG_FONT_SIZE, RED);
+
+  const Rectangle screens_rec = layout_get();
+  DrawText(
+      TextFormat(
+          "Screen Rectangles:\n\tApp: {w: %f, h: %f}\n\tGame: {x: %f, y: %f, "
+          "w: %f, h: %f}\n\tDebug: {x: %f, y: %f, w: %f, h: %f}",
+          self->screen.width, self->screen.height, self->g_screen.x,
+          self->g_screen.y, self->g_screen.width, self->g_screen.height,
+          self->dbg_screen.x, self->dbg_screen.y, self->dbg_screen.width,
+          self->dbg_screen.height),
+      (int)screens_rec.x, (int)screens_rec.y, GOL_DEBUG_FONT_SIZE, RED);
 }
 
 float gol_move_ease(const double cur_time, const double start_time) {
