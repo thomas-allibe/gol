@@ -25,6 +25,8 @@ typedef struct GolCtx {
 
   float grid_width; // Width (and height) of grid
 
+  Vector2 cells[3];
+
   double move_right_start; // Time at which user started a right key press
   double move_left_start;
   double move_up_start;
@@ -43,6 +45,7 @@ void gol_update(GolCtx *const self);
 
 void gol_draw(GolCtx *const self);
 void gol_draw_grid(const GolCtx *const self);
+void gol_draw_cells(const GolCtx *const self);
 void gol_draw_dbg(const GolCtx *const self);
 
 // Utility

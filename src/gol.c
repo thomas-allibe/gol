@@ -37,6 +37,9 @@ int gol_init(GolCtx *const self) {
       (Rectangle){.width = 1480.0f, .height = 720.0f, .x = 0.0f, .y = 0.0f};
   self->cam_pos = (Vector2){0};
   self->grid_width = 50.0f;
+  self->cells[0] = (Vector2){.x = 0.0f, .y = 0.0f};
+  self->cells[1] = (Vector2){.x = 1.0f, .y = 0.0f};
+  self->cells[2] = (Vector2){.x = 2.0f, .y = 0.0f};
 
 #ifdef GOL_DEBUG
   self->show_dbg = true;
@@ -76,8 +79,8 @@ void gol_event(GolCtx *const self) {
   //
   if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
       CheckCollisionPointRec(mouse_pos, self->g_screen)) {
-    self->velocity.x = mouse_delta.x;
-    self->velocity.y = mouse_delta.y;
+    self->velocity.x = -1.0f * mouse_delta.x;
+    self->velocity.y = -1.0f * mouse_delta.y;
   } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
     self->velocity.x = 0.0f;
     self->velocity.y = 0.0f;
@@ -89,7 +92,7 @@ void gol_event(GolCtx *const self) {
     if (IsKeyPressed(KEY_RIGHT)) {
       self->move_right_start = cur_time;
     }
-    self->velocity.x = -1 * GOL_CAMERA_MAX_VELOCITY *
+    self->velocity.x = GOL_CAMERA_MAX_VELOCITY *
                        gol_move_ease(cur_time, self->move_right_start);
 
   } else if (IsKeyReleased(KEY_RIGHT)) {
@@ -103,7 +106,7 @@ void gol_event(GolCtx *const self) {
     if (IsKeyPressed(KEY_LEFT)) {
       self->move_left_start = cur_time;
     }
-    self->velocity.x = GOL_CAMERA_MAX_VELOCITY *
+    self->velocity.x = -1 * GOL_CAMERA_MAX_VELOCITY *
                        gol_move_ease(cur_time, self->move_left_start);
 
   } else if (IsKeyReleased(KEY_LEFT)) {
@@ -116,8 +119,8 @@ void gol_event(GolCtx *const self) {
     if (IsKeyPressed(KEY_UP)) {
       self->move_up_start = cur_time;
     }
-    self->velocity.y =
-        GOL_CAMERA_MAX_VELOCITY * gol_move_ease(cur_time, self->move_up_start);
+    self->velocity.y = -1 * GOL_CAMERA_MAX_VELOCITY *
+                       gol_move_ease(cur_time, self->move_up_start);
 
   } else if (IsKeyReleased(KEY_UP)) {
     self->move_up_start = 0.0;
@@ -130,7 +133,7 @@ void gol_event(GolCtx *const self) {
     if (IsKeyPressed(KEY_DOWN)) {
       self->move_down_start = cur_time;
     }
-    self->velocity.y = -1 * GOL_CAMERA_MAX_VELOCITY *
+    self->velocity.y = GOL_CAMERA_MAX_VELOCITY *
                        gol_move_ease(cur_time, self->move_down_start);
 
   } else if (IsKeyReleased(KEY_DOWN)) {
@@ -156,12 +159,14 @@ void gol_draw(GolCtx *const self) {
     self->dbg_screen = layout_box(layout_get(), RED, BLANK, 10.0f, 5.0f, 5.0f);
 
     gol_draw_grid(self);
+    gol_draw_cells(self);
     gol_draw_dbg(self);
   } else
 #endif /* ifdef GOL_DEBUG */
   {
     self->g_screen = layout_box(self->screen, GRAY, BLANK, 10.0f, 5.0f, 0.0f);
     gol_draw_grid(self);
+    gol_draw_cells(self);
   }
 }
 
@@ -170,8 +175,8 @@ void gol_draw_grid(const GolCtx *const self) {
   Vector2 start_pos, end_pos;
 
   // Compute interval between cam_pos and the closest lines from the left/top
-  const Vector2 grid_frac = {.x = self->cam_pos.x / self->grid_width,
-                             .y = self->cam_pos.y / self->grid_width};
+  const Vector2 grid_frac = {.x = -1.0f * self->cam_pos.x / self->grid_width,
+                             .y = -1.0f * self->cam_pos.y / self->grid_width};
   const Vector2 offset = {
       .x = (grid_frac.x - floorf(grid_frac.x)) * self->grid_width,
       .y = (grid_frac.y - floorf(grid_frac.y)) * self->grid_width};
@@ -222,6 +227,29 @@ void gol_draw_grid(const GolCtx *const self) {
   }
 }
 
+void gol_draw_cells(const GolCtx *const self) {
+  const Rectangle cam_window = {.x = self->cam_pos.x,
+                                .y = self->cam_pos.y,
+                                .width = self->g_screen.width,
+                                .height = self->g_screen.height};
+  for (u32 i = 0; i < 3; i++) {
+    const Rectangle cell_rec = {.x = self->cells[i].x * self->grid_width,
+                                .y = self->cells[i].y * self->grid_width,
+                                .width = self->grid_width,
+                                .height = self->grid_width};
+    if (CheckCollisionRecs(cell_rec, cam_window)) {
+      Rectangle cell_to_draw = GetCollisionRec(cell_rec, cam_window);
+
+      cell_to_draw.x = cell_to_draw.x - self->cam_pos.x + self->g_screen.x + 5;
+      cell_to_draw.y = cell_to_draw.y - self->cam_pos.y + self->g_screen.y + 5;
+      cell_to_draw.width -= 10;
+      cell_to_draw.height -= 10;
+
+      DrawRectangleRec(cell_to_draw, BLACK);
+    }
+  }
+}
+
 void gol_draw_dbg(const GolCtx *const self) {
   const Vector2 mouse_pos = GetMousePosition();
   const Vector2 mouse_pos_rel_g = {
@@ -242,14 +270,10 @@ void gol_draw_dbg(const GolCtx *const self) {
 
   // Draw Point at Origin
   //
-  // const Vector2 origin = {
-  //     .x = self->cam_pos.x + self->g_screen.x + self->g_screen.width / 2.0f,
-  //     .y = self->cam_pos.y + self->g_screen.y + self->g_screen.height
-  //     / 2.0f};
-  const Vector2 origin = {.x = self->cam_pos.x + self->g_screen.x,
-                          .y = self->cam_pos.y + self->g_screen.y};
-  if (CheckCollisionPointRec(origin, self->g_screen)) {
-    DrawCircle((int)origin.x, (int)origin.y, 3.0f, RED);
+  const Vector2 origin_on_screen = {.x = self->g_screen.x - self->cam_pos.x,
+                                    .y = self->g_screen.y - self->cam_pos.y};
+  if (CheckCollisionPointRec(origin_on_screen, self->g_screen)) {
+    DrawCircle((int)origin_on_screen.x, (int)origin_on_screen.y, 15.0f, RED);
   }
 
   // Draw mouse coordinates relative to screen
@@ -273,7 +297,7 @@ void gol_draw_dbg(const GolCtx *const self) {
   //
   DrawFPS((int)self->dbg_screen.x, (int)self->dbg_screen.y);
 
-  layout_start(self->dbg_screen, DISP_VERT, 3);
+  layout_start(self->dbg_screen, DISP_VERT, 4);
 
   const Rectangle title_rec = layout_get();
   const char *const title = "Debug Info:";
@@ -298,6 +322,12 @@ void gol_draw_dbg(const GolCtx *const self) {
           self->dbg_screen.x, self->dbg_screen.y, self->dbg_screen.width,
           self->dbg_screen.height),
       (int)screens_rec.x, (int)screens_rec.y, GOL_DEBUG_FONT_SIZE, RED);
+
+  const Rectangle cam_coord_rec = layout_get();
+  DrawText(TextFormat("Camera: \n\tx: %f\n\ty: %f", self->cam_pos.x,
+                      self->cam_pos.y),
+           (int)cam_coord_rec.x, (int)cam_coord_rec.y, GOL_DEBUG_FONT_SIZE,
+           RED);
 }
 
 float gol_move_ease(const double cur_time, const double start_time) {
