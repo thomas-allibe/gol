@@ -25,6 +25,9 @@ typedef struct GolCtx {
 
   float grid_width; // Width (and height) of grid
 
+  bool mouse_on_g_screen; // Is mouse in g_screen bounds
+  Vector2 mouse_grid_pos; // Position of the mouse in term of grid (cell)
+
   Vector2 cells[3];
 
   double move_right_start; // Time at which user started a right key press

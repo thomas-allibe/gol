@@ -2,7 +2,7 @@
 #include "layout.h"
 #include <raylib.h>
 
-int gol_run(GolCtx *const self, int argc, char *argv[]) {
+i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
   (void)argc;
   (void)argv;
 
@@ -32,7 +32,7 @@ int gol_run(GolCtx *const self, int argc, char *argv[]) {
   return 0;
 }
 
-int gol_init(GolCtx *const self) {
+i32 gol_init(GolCtx *const self) {
   self->screen =
       (Rectangle){.width = 1480.0f, .height = 720.0f, .x = 0.0f, .y = 0.0f};
   self->cam_pos = (Vector2){0};
@@ -45,7 +45,7 @@ int gol_init(GolCtx *const self) {
   self->show_dbg = true;
 #endif /* ifdef GOL_DEBUG */
 
-  InitWindow((int)self->screen.width, (int)self->screen.height, "Game Of Life");
+  InitWindow((i32)self->screen.width, (i32)self->screen.height, "Game Of Life");
   SetWindowState(FLAG_WINDOW_RESIZABLE);
   SetTargetFPS(GOL_FPS); // Set our game to run at 60 frames-per-second
 
@@ -56,6 +56,7 @@ void gol_event(GolCtx *const self) {
   const double cur_time = GetTime();
   const Vector2 mouse_pos = GetMousePosition();
   const Vector2 mouse_delta = GetMouseDelta();
+  const Vector2 mouse_wheel = GetMouseWheelMoveV();
 
   if (IsWindowResized()) {
     self->screen.width = (float)GetRenderWidth();
@@ -75,16 +76,33 @@ void gol_event(GolCtx *const self) {
     self->cam_pos.y = 0.0f;
   }
 
-  // Mouse grid dragging
+  // Mouse on g_screen
   //
-  if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
-      CheckCollisionPointRec(mouse_pos, self->g_screen)) {
-    self->velocity.x = -1.0f * mouse_delta.x;
-    self->velocity.y = -1.0f * mouse_delta.y;
-  } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-    self->velocity.x = 0.0f;
-    self->velocity.y = 0.0f;
+  self->mouse_on_g_screen = CheckCollisionPointRec(mouse_pos, self->g_screen);
+  if (self->mouse_on_g_screen) {
+    // Compute mouse grid pos coordinate
+    //
+    // #TODO: issue with <0, should be -1 ?
+    self->mouse_grid_pos = (Vector2){
+        .x = truncf((mouse_pos.x - self->g_screen.x - fabsf(self->cam_pos.x)) /
+                    self->grid_width),
+        .y = truncf((mouse_pos.y - self->g_screen.y - fabsf(self->cam_pos.y)) /
+                    self->grid_width)};
+
+    // Mouse grid dragging
+    //
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+      self->velocity.x = -1.0f * mouse_delta.x;
+      self->velocity.y = -1.0f * mouse_delta.y;
+    } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+      self->velocity.x = 0.0f;
+      self->velocity.y = 0.0f;
+    }
   }
+
+  // Mouse wheel gri_width change
+  //
+  self->grid_width += mouse_wheel.y;
 
   // Keyboard Right Key Grid Move
   //
@@ -161,6 +179,7 @@ void gol_draw(GolCtx *const self) {
     gol_draw_grid(self);
     gol_draw_cells(self);
     gol_draw_dbg(self);
+
   } else
 #endif /* ifdef GOL_DEBUG */
   {
@@ -174,6 +193,8 @@ void gol_draw_grid(const GolCtx *const self) {
 
   Vector2 start_pos, end_pos;
 
+  i32 i = 0; // For debug
+
   // Compute interval between cam_pos and the closest lines from the left/top
   const Vector2 grid_frac = {.x = -1.0f * self->cam_pos.x / self->grid_width,
                              .y = -1.0f * self->cam_pos.y / self->grid_width};
@@ -183,6 +204,8 @@ void gol_draw_grid(const GolCtx *const self) {
 
   // Draw Vertical Lines
   //
+  // Start by drawing the first leftmost vertical line
+  i = 0; // For debug
   for (float x = self->g_screen.x + offset.x;
        x <= self->g_screen.x + self->g_screen.width; x += self->grid_width) {
     start_pos.x = x;
@@ -196,9 +219,10 @@ void gol_draw_grid(const GolCtx *const self) {
     if (self->show_dbg) {
       // x coord on each line
       DrawTextPro(GetFontDefault(),
-                  TextFormat("x: %d", (int)(x - self->g_screen.x)),
+                  TextFormat("x: %d", (i32)(truncf(-1.0f * grid_frac.x)) + i),
                   (Vector2){.x = x, .y = self->g_screen.y + 5},
                   (Vector2){.x = 0.0f, .y = 10.0f}, 90.0f, 10.0f, 2.0f, PURPLE);
+      i += 1; // Increment
     }
 #endif /* ifdef GOL_DEBUG                                                      \
         */
@@ -206,6 +230,8 @@ void gol_draw_grid(const GolCtx *const self) {
 
   // Draw Horizontal Lines
   //
+  // Start by drawing the first topmost horizontal line
+  i = 0; // For debug
   for (float y = self->g_screen.y + offset.y;
        y <= self->g_screen.y + self->g_screen.height; y += self->grid_width) {
     start_pos.x = self->g_screen.x;
@@ -219,9 +245,10 @@ void gol_draw_grid(const GolCtx *const self) {
     if (self->show_dbg) {
       // x coord on each line
       DrawTextPro(GetFontDefault(),
-                  TextFormat("y: %d", (int)(y - self->g_screen.y)),
+                  TextFormat("y: %d", (i32)(truncf(-1.0f * grid_frac.y)) + i),
                   (Vector2){.x = self->g_screen.x + 5, .y = y}, (Vector2){0},
                   0.0f, 10.0f, 2.0f, PURPLE);
+      i += 1; // Increment
     }
 #endif /* ifdef GOL_DEBUG */
   }
@@ -259,35 +286,37 @@ void gol_draw_dbg(const GolCtx *const self) {
 
   // Draw a center cross to g_screen
   //
-  DrawLine((int)(self->g_screen.x + self->g_screen.width / 2.0f),
-           (int)self->g_screen.y,
-           (int)(self->g_screen.x + self->g_screen.width / 2.0f),
-           (int)(self->g_screen.y + self->g_screen.height), RED);
-  DrawLine((int)(self->g_screen.x),
-           (int)(self->g_screen.y + self->g_screen.height / 2.0f),
-           (int)(self->g_screen.x + self->g_screen.width),
-           (int)(self->g_screen.y + self->g_screen.height / 2.0f), RED);
+  DrawLine((i32)(self->g_screen.x + self->g_screen.width / 2.0f),
+           (i32)self->g_screen.y,
+           (i32)(self->g_screen.x + self->g_screen.width / 2.0f),
+           (i32)(self->g_screen.y + self->g_screen.height), RED);
+  DrawLine((i32)(self->g_screen.x),
+           (i32)(self->g_screen.y + self->g_screen.height / 2.0f),
+           (i32)(self->g_screen.x + self->g_screen.width),
+           (i32)(self->g_screen.y + self->g_screen.height / 2.0f), RED);
 
   // Draw Point at Origin
   //
   const Vector2 origin_on_screen = {.x = self->g_screen.x - self->cam_pos.x,
                                     .y = self->g_screen.y - self->cam_pos.y};
   if (CheckCollisionPointRec(origin_on_screen, self->g_screen)) {
-    DrawCircle((int)origin_on_screen.x, (int)origin_on_screen.y, 15.0f, RED);
+    DrawCircle((i32)origin_on_screen.x, (i32)origin_on_screen.y, 15.0f, RED);
   }
 
   // Draw mouse coordinates relative to screen
   //
-  DrawText(TextFormat("s(%d, %d)", (int)mouse_pos.x, (int)mouse_pos.y),
-           (int)mouse_pos.x + 20, (int)mouse_pos.y, GOL_DEBUG_FONT_SIZE, RED);
+  DrawText(TextFormat("s(%d, %d)", (i32)mouse_pos.x, (i32)mouse_pos.y),
+           (i32)mouse_pos.x + 20, (i32)mouse_pos.y, GOL_DEBUG_FONT_SIZE, RED);
 
   // Draw mouse coordinates relative to g_screen
   //
-  if (CheckCollisionPointRec(mouse_pos, self->g_screen)) {
-    DrawText(
-        TextFormat("g(%d, %d)", (int)mouse_pos_rel_g.x, (int)mouse_pos_rel_g.y),
-        (int)mouse_pos.x + 20, (int)(mouse_pos.y + GOL_DEBUG_FONT_SIZE + 5.0f),
-        GOL_DEBUG_FONT_SIZE, RED);
+  if (self->mouse_on_g_screen) {
+    DrawText(TextFormat("gs(%d, %d)\ng(%d, %d)", (i32)mouse_pos_rel_g.x,
+                        (i32)mouse_pos_rel_g.y, (i32)self->mouse_grid_pos.x,
+                        (i32)self->mouse_grid_pos.y),
+             (i32)mouse_pos.x + 20,
+             (i32)(mouse_pos.y + GOL_DEBUG_FONT_SIZE + 5.0f),
+             GOL_DEBUG_FONT_SIZE, RED);
   }
 
   // Draw Debug Panel
@@ -295,7 +324,7 @@ void gol_draw_dbg(const GolCtx *const self) {
   //
   // Draw FPS top left debug screen
   //
-  DrawFPS((int)self->dbg_screen.x, (int)self->dbg_screen.y);
+  DrawFPS((i32)self->dbg_screen.x, (i32)self->dbg_screen.y);
 
   layout_start(self->dbg_screen, DISP_VERT, 4);
 
@@ -304,13 +333,13 @@ void gol_draw_dbg(const GolCtx *const self) {
   const float title_x_offset =
       (title_rec.width - (float)MeasureText(title, GOL_DEBUG_TITLE_FONT_SIZE)) /
       2.0f;
-  DrawText(title, (int)(title_rec.x + title_x_offset), (int)title_rec.y,
+  DrawText(title, (i32)(title_rec.x + title_x_offset), (i32)title_rec.y,
            GOL_DEBUG_TITLE_FONT_SIZE, RED);
 
   const Rectangle velocity_rec = layout_get();
   DrawText(TextFormat("Camera Velocity (px/s): \n\tx: %f\n\ty: %f",
                       self->velocity.x, self->velocity.y),
-           (int)velocity_rec.x, (int)velocity_rec.y, GOL_DEBUG_FONT_SIZE, RED);
+           (i32)velocity_rec.x, (i32)velocity_rec.y, GOL_DEBUG_FONT_SIZE, RED);
 
   const Rectangle screens_rec = layout_get();
   DrawText(
@@ -321,12 +350,12 @@ void gol_draw_dbg(const GolCtx *const self) {
           self->g_screen.y, self->g_screen.width, self->g_screen.height,
           self->dbg_screen.x, self->dbg_screen.y, self->dbg_screen.width,
           self->dbg_screen.height),
-      (int)screens_rec.x, (int)screens_rec.y, GOL_DEBUG_FONT_SIZE, RED);
+      (i32)screens_rec.x, (i32)screens_rec.y, GOL_DEBUG_FONT_SIZE, RED);
 
   const Rectangle cam_coord_rec = layout_get();
   DrawText(TextFormat("Camera: \n\tx: %f\n\ty: %f", self->cam_pos.x,
                       self->cam_pos.y),
-           (int)cam_coord_rec.x, (int)cam_coord_rec.y, GOL_DEBUG_FONT_SIZE,
+           (i32)cam_coord_rec.x, (i32)cam_coord_rec.y, GOL_DEBUG_FONT_SIZE,
            RED);
 }
 
