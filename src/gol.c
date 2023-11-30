@@ -83,10 +83,17 @@ void gol_event(GolCtx *const self) {
     // Compute mouse grid pos coordinate
     //
     // #TODO: issue with <0, should be -1 ?
+    // self->mouse_grid_pos = (Vector2){
+    //     .x = truncf((mouse_pos.x - self->g_screen.x - fabsf(self->cam_pos.x))
+    //     /
+    //                 self->grid_width),
+    //     .y = truncf((mouse_pos.y - self->g_screen.y - fabsf(self->cam_pos.y))
+    //     /
+    //                 self->grid_width)};
     self->mouse_grid_pos = (Vector2){
-        .x = truncf((mouse_pos.x - self->g_screen.x - fabsf(self->cam_pos.x)) /
+        .x = floorf((mouse_pos.x - self->g_screen.x - fabsf(self->cam_pos.x)) /
                     self->grid_width),
-        .y = truncf((mouse_pos.y - self->g_screen.y - fabsf(self->cam_pos.y)) /
+        .y = floorf((mouse_pos.y - self->g_screen.y - fabsf(self->cam_pos.y)) /
                     self->grid_width)};
 
     // Mouse grid dragging
