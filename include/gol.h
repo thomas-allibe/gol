@@ -11,11 +11,22 @@
 #define GOL_DEBUG
 #define GOL_DEBUG_FONT_SIZE 10.0f
 #define GOL_DEBUG_TITLE_FONT_SIZE 32.0f
+#define GOL_DEBUG_COLOR BLUE
 
 #define GOL_FPS 60
-#define GOL_CAMERA_MAX_VELOCITY 15.0f
+#define GOL_INITIAL_SCREEN_WIDTH 1480.0
+#define GOL_INITIAL_SCREEN_HEIGHT 720.0
+#define GOL_INITIAL_GRID_WIDTH 50.0
+#define GOL_INITIAL_CYCLE_PERIOD 1.0
 #define GOL_GRID_COLOR LIGHTGRAY
 #define GOL_HOVER_COLOR DARKGREEN
+
+typedef u32 Count;
+
+typedef struct CellMap {
+  Vector2 key; // Cell Corrdinates
+  Count value; // Neighbour count (only when updating, else not used)
+} CellMap;
 
 typedef struct GolCtx {
   Rectangle screen;     // Screen bounds
@@ -26,16 +37,17 @@ typedef struct GolCtx {
 
   float grid_width; // Width (and height) of grid
 
-  bool mouse_on_g_screen; // Is mouse in g_screen bounds
-  Vector2 mouse_grid_pos; // Position of the mouse in term of grid (cell)
+  bool mouse_on_g_screen;   // Is mouse in g_screen bounds
+  Vector2 mouse_cell_coord; // Coordinates of the cell under cursor
 
-  Vector2 *cells;
-  bool toggle_cell;
+  bool play; // If true, plays Game Of Life rules each GOL_CELL_UPDATE_PERIOD
+  CellMap *alive_cells; // Array of alive cells on the grid
+  bool toggle_cell;     // If the cell under cursor must be toggled (Ctrl+clic)
+  double cycle_period;  // Time in seconds between two cycles
+  double cycle_last_update;  // Time of the last cell lifecycle update
+  double cycle_compute_time; // Time to compute a lifecycle
+  u64 cycle_nb;              // Number of cycle since start
 
-  double move_right_start; // Time at which user started a right key press
-  double move_left_start;
-  double move_up_start;
-  double move_down_start;
   Vector2 velocity; // Camera velocity
 
   bool show_dbg; // Shoul show debug info ?
