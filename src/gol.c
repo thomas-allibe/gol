@@ -1,6 +1,13 @@
 #include "gol.h"
-#include "layout.h"
 #include <raylib.h>
+#include <stdlib.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
+#pragma GCC diagnostic pop
 
 i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
   (void)argc;
@@ -29,7 +36,7 @@ i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
 
   CloseWindow(); // Close window and OpenGL context
 
-  return 0;
+  return gol_deinit(self);
 }
 
 i32 gol_init(GolCtx *const self) {
@@ -37,9 +44,11 @@ i32 gol_init(GolCtx *const self) {
       (Rectangle){.width = 1480.0f, .height = 720.0f, .x = 0.0f, .y = 0.0f};
   self->cam_pos = (Vector2){0};
   self->grid_width = 50.0f;
-  self->cells[0] = (Vector2){.x = 0.0f, .y = 0.0f};
-  self->cells[1] = (Vector2){.x = 1.0f, .y = 0.0f};
-  self->cells[2] = (Vector2){.x = 2.0f, .y = 0.0f};
+  // self->cells[0] = (Vector2){.x = 0.0f, .y = 0.0f};
+  // self->cells[1] = (Vector2){.x = 1.0f, .y = 0.0f};
+  // self->cells[2] = (Vector2){.x = 2.0f, .y = 0.0f};
+  // arrput(self->cells, (Vector2){.x = 0.0f, .y = 0.0f});
+  // arrput(self->cells, self->cam_pos);
 
 #ifdef GOL_DEBUG
   self->show_dbg = true;
@@ -82,28 +91,26 @@ void gol_event(GolCtx *const self) {
   if (self->mouse_on_g_screen) {
     // Compute mouse grid pos coordinate
     //
-    // #TODO: issue with <0, should be -1 ?
-    // self->mouse_grid_pos = (Vector2){
-    //     .x = truncf((mouse_pos.x - self->g_screen.x - fabsf(self->cam_pos.x))
-    //     /
-    //                 self->grid_width),
-    //     .y = truncf((mouse_pos.y - self->g_screen.y - fabsf(self->cam_pos.y))
-    //     /
-    //                 self->grid_width)};
     self->mouse_grid_pos = (Vector2){
-        .x = floorf((mouse_pos.x - self->g_screen.x - fabsf(self->cam_pos.x)) /
+        .x = floorf((mouse_pos.x - self->g_screen.x + self->cam_pos.x) /
                     self->grid_width),
-        .y = floorf((mouse_pos.y - self->g_screen.y - fabsf(self->cam_pos.y)) /
+        .y = floorf((mouse_pos.y - self->g_screen.y + self->cam_pos.y) /
                     self->grid_width)};
 
-    // Mouse grid dragging
-    //
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-      self->velocity.x = -1.0f * mouse_delta.x;
-      self->velocity.y = -1.0f * mouse_delta.y;
-    } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-      self->velocity.x = 0.0f;
-      self->velocity.y = 0.0f;
+    if (IsKeyDown(KEY_LEFT_CONTROL)) {
+      // Mouse Left + Ctrl: toggle cell
+      //
+      self->toggle_cell = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    } else {
+      // Mouse grid dragging
+      //
+      if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        self->velocity.x = -1.0f * mouse_delta.x;
+        self->velocity.y = -1.0f * mouse_delta.y;
+      } else if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+        self->velocity.x = 0.0f;
+        self->velocity.y = 0.0f;
+      }
     }
   }
 
@@ -170,6 +177,22 @@ void gol_event(GolCtx *const self) {
 void gol_update(GolCtx *const self) {
   self->cam_pos.x += self->velocity.x;
   self->cam_pos.y += self->velocity.y;
+
+  if (self->toggle_cell) {
+    self->toggle_cell = false;
+    bool found = false;
+    for (u32 i = 0; i < arrlen(self->cells) && !found; i++) {
+      if (self->cells[i].x == self->mouse_grid_pos.x &&
+          self->cells[i].y == self->mouse_grid_pos.y) {
+        found = true;
+        arrdelswap(self->cells, i);
+        break;
+      }
+    }
+    if (!found) {
+      arrput(self->cells, self->mouse_grid_pos);
+    }
+  }
 }
 
 void gol_draw(GolCtx *const self) {
@@ -185,6 +208,7 @@ void gol_draw(GolCtx *const self) {
 
     gol_draw_grid(self);
     gol_draw_cells(self);
+    gol_draw_hovered_cell(self);
     gol_draw_dbg(self);
 
   } else
@@ -193,6 +217,7 @@ void gol_draw(GolCtx *const self) {
     self->g_screen = layout_box(self->screen, GRAY, BLANK, 10.0f, 5.0f, 0.0f);
     gol_draw_grid(self);
     gol_draw_cells(self);
+    gol_draw_hovered_cell(self);
   }
 }
 
@@ -266,7 +291,7 @@ void gol_draw_cells(const GolCtx *const self) {
                                 .y = self->cam_pos.y,
                                 .width = self->g_screen.width,
                                 .height = self->g_screen.height};
-  for (u32 i = 0; i < 3; i++) {
+  for (u32 i = 0; i < arrlen(self->cells); i++) {
     const Rectangle cell_rec = {.x = self->cells[i].x * self->grid_width,
                                 .y = self->cells[i].y * self->grid_width,
                                 .width = self->grid_width,
@@ -280,6 +305,27 @@ void gol_draw_cells(const GolCtx *const self) {
       cell_to_draw.height -= 10;
 
       DrawRectangleRec(cell_to_draw, BLACK);
+    }
+  }
+}
+
+void gol_draw_hovered_cell(const GolCtx *const self) {
+  if (self->mouse_on_g_screen) {
+    const Rectangle cam_window = {.x = self->cam_pos.x,
+                                  .y = self->cam_pos.y,
+                                  .width = self->g_screen.width,
+                                  .height = self->g_screen.height};
+    const Rectangle cell_rec = {.x = self->mouse_grid_pos.x * self->grid_width,
+                                .y = self->mouse_grid_pos.y * self->grid_width,
+                                .width = self->grid_width,
+                                .height = self->grid_width};
+    if (CheckCollisionRecs(cell_rec, cam_window)) {
+      Rectangle cell_to_draw = GetCollisionRec(cell_rec, cam_window);
+
+      cell_to_draw.x = cell_to_draw.x - self->cam_pos.x + self->g_screen.x;
+      cell_to_draw.y = cell_to_draw.y - self->cam_pos.y + self->g_screen.y;
+
+      DrawRectangleLinesEx(cell_to_draw, 5.0f, GOL_HOVER_COLOR);
     }
   }
 }
@@ -333,7 +379,7 @@ void gol_draw_dbg(const GolCtx *const self) {
   //
   DrawFPS((i32)self->dbg_screen.x, (i32)self->dbg_screen.y);
 
-  layout_start(self->dbg_screen, DISP_VERT, 4);
+  layout_start(self->dbg_screen, DISP_VERT, 3);
 
   const Rectangle title_rec = layout_get();
   const char *const title = "Debug Info:";
@@ -343,10 +389,18 @@ void gol_draw_dbg(const GolCtx *const self) {
   DrawText(title, (i32)(title_rec.x + title_x_offset), (i32)title_rec.y,
            GOL_DEBUG_TITLE_FONT_SIZE, RED);
 
+  layout_start(layout_get(), DISP_HORIZ, 3);
+
   const Rectangle velocity_rec = layout_get();
   DrawText(TextFormat("Camera Velocity (px/s): \n\tx: %f\n\ty: %f",
                       self->velocity.x, self->velocity.y),
            (i32)velocity_rec.x, (i32)velocity_rec.y, GOL_DEBUG_FONT_SIZE, RED);
+
+  const Rectangle cam_coord_rec = layout_get();
+  DrawText(TextFormat("Camera: \n\tx: %f\n\ty: %f", self->cam_pos.x,
+                      self->cam_pos.y),
+           (i32)cam_coord_rec.x, (i32)cam_coord_rec.y, GOL_DEBUG_FONT_SIZE,
+           RED);
 
   const Rectangle screens_rec = layout_get();
   DrawText(
@@ -359,11 +413,21 @@ void gol_draw_dbg(const GolCtx *const self) {
           self->dbg_screen.height),
       (i32)screens_rec.x, (i32)screens_rec.y, GOL_DEBUG_FONT_SIZE, RED);
 
-  const Rectangle cam_coord_rec = layout_get();
-  DrawText(TextFormat("Camera: \n\tx: %f\n\ty: %f", self->cam_pos.x,
-                      self->cam_pos.y),
-           (i32)cam_coord_rec.x, (i32)cam_coord_rec.y, GOL_DEBUG_FONT_SIZE,
-           RED);
+  const Rectangle cells_rec = layout_get();
+  for (u32 i = 0; i < arrlen(self->cells); i++) {
+    DrawText(TextFormat("%02d:\t{x: %f, y: %f}", i, self->cells[i].x,
+                        self->cells[i].y),
+             (int)cells_rec.x,
+             (int)cells_rec.y + (int)i * (int)GOL_DEBUG_FONT_SIZE,
+             GOL_DEBUG_FONT_SIZE, RED);
+  }
+}
+
+int gol_deinit(GolCtx *const self) {
+  if (self->cells) {
+    arrfree(self->cells);
+  }
+  return EXIT_SUCCESS;
 }
 
 float gol_move_ease(const double cur_time, const double start_time) {

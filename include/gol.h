@@ -15,6 +15,7 @@
 #define GOL_FPS 60
 #define GOL_CAMERA_MAX_VELOCITY 15.0f
 #define GOL_GRID_COLOR LIGHTGRAY
+#define GOL_HOVER_COLOR DARKGREEN
 
 typedef struct GolCtx {
   Rectangle screen;     // Screen bounds
@@ -28,7 +29,8 @@ typedef struct GolCtx {
   bool mouse_on_g_screen; // Is mouse in g_screen bounds
   Vector2 mouse_grid_pos; // Position of the mouse in term of grid (cell)
 
-  Vector2 cells[3];
+  Vector2 *cells;
+  bool toggle_cell;
 
   double move_right_start; // Time at which user started a right key press
   double move_left_start;
@@ -49,7 +51,10 @@ void gol_update(GolCtx *const self);
 void gol_draw(GolCtx *const self);
 void gol_draw_grid(const GolCtx *const self);
 void gol_draw_cells(const GolCtx *const self);
+void gol_draw_hovered_cell(const GolCtx *const self);
 void gol_draw_dbg(const GolCtx *const self);
+
+int gol_deinit(GolCtx *const self);
 
 // Utility
 float gol_move_ease(const double cur_time, const double start_time);
