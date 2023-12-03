@@ -7,6 +7,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #define GOL_DEBUG
 #define GOL_DEBUG_FONT_SIZE 10.0f
@@ -18,6 +20,9 @@
 #define GOL_INITIAL_SCREEN_HEIGHT 720.0
 #define GOL_INITIAL_GRID_WIDTH 50.0
 #define GOL_INITIAL_CYCLE_PERIOD 1.0
+
+#define GOL_ALIVE_CELL_SIZE_RATIO 0.9f
+
 #define GOL_GRID_COLOR LIGHTGRAY
 #define GOL_HOVER_COLOR DARKGREEN
 
@@ -35,7 +40,8 @@ typedef struct GolCtx {
   Vector2 cam_pos; // "Camera" position relative to the world, considered at the
                    // top left corner of g_screen
 
-  float grid_width; // Width (and height) of grid
+  bool draw_grid;  // Should render grid
+  float cell_size; // Width (and height) of a cell
 
   bool mouse_on_g_screen;   // Is mouse in g_screen bounds
   Vector2 mouse_cell_coord; // Coordinates of the cell under cursor

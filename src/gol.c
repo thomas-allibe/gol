@@ -46,8 +46,27 @@ i32 gol_init(GolCtx *const self) {
                              .x = 0.0f,
                              .y = 0.0f};
   self->cam_pos = (Vector2){0};
-  self->grid_width = GOL_INITIAL_GRID_WIDTH;
+  self->cell_size = GOL_INITIAL_GRID_WIDTH;
   self->cycle_period = GOL_INITIAL_CYCLE_PERIOD;
+  self->draw_grid = true;
+
+  // srand((u32)time(NULL));
+  // for (u32 i = 0; i < 100; i++) {
+  //   for (u32 j = 0; j < 100; j++) {
+  //     if ((rand() * 2.0 / RAND_MAX) > 0.5) {
+  //       const Vector2 cell = {
+  //           .x = floorf(((float)rand() * 100.0f) / (float)RAND_MAX),
+  //           .y = floorf(((float)rand() * 100.0f) / (float)RAND_MAX)};
+  //       hmput(self->alive_cells, cell, 0);
+  //     }
+  //   }
+  // }
+  // for (u32 i = 0; i < 1000; i++) {
+  //   for (u32 j = 0; j < 1000; j++) {
+  //     const Vector2 cell = {.x = (float)i, .y = (float)j};
+  //     hmput(self->alive_cells, cell, 0);
+  //   }
+  // }
 
 #ifdef GOL_DEBUG
   self->show_dbg = true;
@@ -84,6 +103,10 @@ void gol_event(GolCtx *const self) {
     self->cam_pos.y = 0.0f;
   }
 
+  if (IsKeyPressed(KEY_G)) {
+    self->draw_grid = !self->draw_grid;
+  }
+
   if (IsKeyPressed(KEY_SPACE)) {
     self->play = !self->play;
   }
@@ -96,9 +119,9 @@ void gol_event(GolCtx *const self) {
     //
     self->mouse_cell_coord = (Vector2){
         .x = floorf((mouse_pos.x - self->g_screen.x + self->cam_pos.x) /
-                    self->grid_width),
+                    self->cell_size),
         .y = floorf((mouse_pos.y - self->g_screen.y + self->cam_pos.y) /
-                    self->grid_width)};
+                    self->cell_size)};
 
     if (IsKeyDown(KEY_LEFT_CONTROL)) {
       // Mouse Left + Ctrl: toggle cell
@@ -119,18 +142,18 @@ void gol_event(GolCtx *const self) {
 
   // Mouse wheel gri_width change
   //
-  self->grid_width += mouse_wheel.y;
+  self->cell_size += mouse_wheel.y;
 
   // Keyboard Up Key
   //
   if (IsKeyPressed(KEY_UP)) {
-    self->cycle_period /= 2.0;
+    self->cycle_period /= 1.25;
   }
 
   // Keyboard Down Key
   //
   if (IsKeyPressed(KEY_DOWN)) {
-    self->cycle_period *= 2.0;
+    self->cycle_period *= 1.25;
   }
 }
 
@@ -170,14 +193,24 @@ void gol_update(GolCtx *const self) {
         for (float y = self->alive_cells[i].key.y - 1.0f;
              y <= self->alive_cells[i].key.y + 1.0f; y++) {
 
-          // Is not current cell
-          if (!(self->alive_cells[i].key.x == x &&
-                self->alive_cells[i].key.y == y)) {
-            const Vector2 adj_cell = {.x = x, .y = y};
-            const ptrdiff_t index = hmgeti(neighbour, adj_cell);
-            if (index == -1) {
-              hmput(neighbour, adj_cell, 1);
+          const Vector2 adj_cell = {.x = x, .y = y};
+          const ptrdiff_t index = hmgeti(neighbour, adj_cell);
+
+          if (index == -1) {
+            // Doesn't exists
+            if (self->alive_cells[i].key.x == x &&
+                self->alive_cells[i].key.y == y) {
+              // Current cell
+              hmput(neighbour, adj_cell, 0);
             } else {
+              // Not current cell
+              hmput(neighbour, adj_cell, 1);
+            }
+          } else {
+            // Exists
+            if (!(self->alive_cells[i].key.x == x &&
+                  self->alive_cells[i].key.y == y)) {
+              // Not Current cell
               neighbour[index].value += 1;
             }
           }
@@ -219,7 +252,9 @@ void gol_draw(GolCtx *const self) {
     self->dbg_screen =
         layout_box(layout_get(), GOL_DEBUG_COLOR, BLANK, 10.0f, 5.0f, 5.0f);
 
-    gol_draw_grid(self);
+    if (self->draw_grid) {
+      gol_draw_grid(self);
+    }
     gol_draw_cells(self);
     gol_draw_hovered_cell(self);
     gol_draw_dbg(self);
@@ -228,7 +263,9 @@ void gol_draw(GolCtx *const self) {
 #endif /* ifdef GOL_DEBUG */
   {
     self->g_screen = layout_box(self->screen, GRAY, BLANK, 10.0f, 5.0f, 0.0f);
-    gol_draw_grid(self);
+    if (self->draw_grid) {
+      gol_draw_grid(self);
+    }
     gol_draw_cells(self);
     gol_draw_hovered_cell(self);
   }
@@ -241,18 +278,18 @@ void gol_draw_grid(const GolCtx *const self) {
   i32 i = 0; // For debug
 
   // Compute interval between cam_pos and the closest lines from the left/top
-  const Vector2 grid_frac = {.x = -1.0f * self->cam_pos.x / self->grid_width,
-                             .y = -1.0f * self->cam_pos.y / self->grid_width};
+  const Vector2 grid_frac = {.x = -1.0f * self->cam_pos.x / self->cell_size,
+                             .y = -1.0f * self->cam_pos.y / self->cell_size};
   const Vector2 offset = {
-      .x = (grid_frac.x - floorf(grid_frac.x)) * self->grid_width,
-      .y = (grid_frac.y - floorf(grid_frac.y)) * self->grid_width};
+      .x = (grid_frac.x - floorf(grid_frac.x)) * self->cell_size,
+      .y = (grid_frac.y - floorf(grid_frac.y)) * self->cell_size};
 
   // Draw Vertical Lines
   //
   // Start by drawing the first leftmost vertical line
   i = 0; // For debug
   for (float x = self->g_screen.x + offset.x;
-       x <= self->g_screen.x + self->g_screen.width; x += self->grid_width) {
+       x <= self->g_screen.x + self->g_screen.width; x += self->cell_size) {
     start_pos.x = x;
     start_pos.y = self->g_screen.y;
     end_pos.x = x;
@@ -278,7 +315,7 @@ void gol_draw_grid(const GolCtx *const self) {
   // Start by drawing the first topmost horizontal line
   i = 0; // For debug
   for (float y = self->g_screen.y + offset.y;
-       y <= self->g_screen.y + self->g_screen.height; y += self->grid_width) {
+       y <= self->g_screen.y + self->g_screen.height; y += self->cell_size) {
     start_pos.x = self->g_screen.x;
     start_pos.y = y;
     end_pos.x = self->g_screen.x + self->g_screen.width;
@@ -304,19 +341,25 @@ void gol_draw_cells(const GolCtx *const self) {
                                 .y = self->cam_pos.y,
                                 .width = self->g_screen.width,
                                 .height = self->g_screen.height};
+  const float cell_size_offset =
+      self->cell_size * (1.0f - GOL_ALIVE_CELL_SIZE_RATIO);
+  const float cell_pos_offset = cell_size_offset / 2;
+
   for (u32 i = 0; i < hmlen(self->alive_cells); i++) {
     const Rectangle cell_rec = {
-        .x = self->alive_cells[i].key.x * self->grid_width,
-        .y = self->alive_cells[i].key.y * self->grid_width,
-        .width = self->grid_width,
-        .height = self->grid_width};
+        .x = self->alive_cells[i].key.x * self->cell_size,
+        .y = self->alive_cells[i].key.y * self->cell_size,
+        .width = self->cell_size,
+        .height = self->cell_size};
     if (CheckCollisionRecs(cell_rec, cam_window)) {
       Rectangle cell_to_draw = GetCollisionRec(cell_rec, cam_window);
 
-      cell_to_draw.x = cell_to_draw.x - self->cam_pos.x + self->g_screen.x + 5;
-      cell_to_draw.y = cell_to_draw.y - self->cam_pos.y + self->g_screen.y + 5;
-      cell_to_draw.width -= 10;
-      cell_to_draw.height -= 10;
+      cell_to_draw.x =
+          cell_to_draw.x - self->cam_pos.x + self->g_screen.x + cell_pos_offset;
+      cell_to_draw.y =
+          cell_to_draw.y - self->cam_pos.y + self->g_screen.y + cell_pos_offset;
+      cell_to_draw.width -= cell_size_offset;
+      cell_to_draw.height -= cell_size_offset;
 
       DrawRectangleRec(cell_to_draw, BLACK);
     }
@@ -329,11 +372,10 @@ void gol_draw_hovered_cell(const GolCtx *const self) {
                                   .y = self->cam_pos.y,
                                   .width = self->g_screen.width,
                                   .height = self->g_screen.height};
-    const Rectangle cell_rec = {
-        .x = self->mouse_cell_coord.x * self->grid_width,
-        .y = self->mouse_cell_coord.y * self->grid_width,
-        .width = self->grid_width,
-        .height = self->grid_width};
+    const Rectangle cell_rec = {.x = self->mouse_cell_coord.x * self->cell_size,
+                                .y = self->mouse_cell_coord.y * self->cell_size,
+                                .width = self->cell_size,
+                                .height = self->cell_size};
     if (CheckCollisionRecs(cell_rec, cam_window)) {
       Rectangle cell_to_draw = GetCollisionRec(cell_rec, cam_window);
 
