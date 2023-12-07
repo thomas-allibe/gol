@@ -16,6 +16,11 @@
 
 #define FIFO_ERR_MAX_MSG_LENGTH 256
 
+#define fifo_to_str_literal(s) _fifo_to_str_literal_(s)
+#define _fifo_to_str_literal_(s) #s
+
+#define fifo_print_err_location __FILE__ ":" fifo_to_str_literal(__LINE__)
+
 typedef enum FifoErrorCode {
   fifo_success = 0, // It's all good man!
   fifo_timeout = 1, // IT'S TIME TO STOP!
@@ -25,7 +30,7 @@ typedef enum FifoErrorCode {
 typedef struct FifoError {
   bool status;        // T: there is an error, F: no error
   FifoErrorCode code; // Error code to allow switch case on the error
-  char msg[FIFO_ERR_MAX_MSG_LENGTH]; // Human readable error cause
+  char *msg; // Human readable error cause. Do not try to modify it, it's static
 } FifoError;
 
 typedef struct FifoMsg {
@@ -45,15 +50,22 @@ void fifo_create(Fifo *const self, FifoError *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
+  if (err->status) {
+    return;
+  }
+
   if (cnd_init(&self->cnd) == thrd_error) {
-    // #TODO: Error Return
+    err->msg =
+        "Could not initialize Conditional Variable (" fifo_print_err_location
+        ").";
     err->status = true;
     err->code = fifo_error;
     return;
   }
 
   if (mtx_init(&self->mut, mtx_timed) == thrd_error) {
-    // #TODO: Error Return
+    cnd_destroy(&self->cnd);
+    err->msg = "Could not initialize Mutex (" fifo_print_err_location ").";
     err->status = true;
     err->code = fifo_error;
     return;
@@ -72,55 +84,73 @@ void fifo_destroy(Fifo *const self, FifoError *const err) {
   // #TODO: what happens if a thread is waiting on it?
   cnd_destroy(&self->cnd);
   mtx_destroy(&self->mut);
-  arrfree(self->elems);
+  if (self->elems != NULL) {
+    arrfree(self->elems);
+  }
 
   // Success
   return;
 }
 
-struct timespec fifo_compute_timeout(double const timeout_s,
+struct timespec fifo_compute_timeout(long const timeout_s,
                                      FifoError *const err) {
   assert(err && "err can't be NULL, error handling is important!");
 
   struct timespec timeout = {0};
 
+  if (err->status) {
+    return timeout;
+  }
+
   if (!timespec_get(&timeout, TIME_UTC)) {
-    // #TODO: Error Return
+    err->msg = "Could not get timespec (" fifo_print_err_location ").";
     err->status = true;
     err->code = fifo_error;
     return timeout;
   }
 
-  double integer_part;
-  timeout.tv_nsec += modf(timeout_s, &integer_part) * 1000000000.0;
-  timeout.tv_sec += (unsigned long)integer_part;
+  if (timeout_s > 0) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+    timeout.tv_sec += (unsigned long)timeout_s;
+#pragma GCC diagnostic pop
+  } else {
+    err->msg = "Invalid timeout, can't be <=0 (" fifo_print_err_location ").";
+    err->status = true;
+    err->code = fifo_error;
+    return timeout;
+  }
 
   // Success
   return timeout;
 }
 
-void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
-                      double const timeout_s, FifoError *const err) {
+void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
+                      FifoError *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
+  if (err->status) {
+    return;
+  }
+
   int thrd_code = thrd_success;
 
-  if (timeout_s > 0.0) {
+  if (timeout_s > 0) {
     struct timespec timeout = fifo_compute_timeout(timeout_s, err);
-
     if (err->status) {
       return;
     }
 
     thrd_code = mtx_timedlock(&self->mut, &timeout);
     if (thrd_code == thrd_timedout) {
-      // #TODO: Error Return
+      err->msg =
+          "Couldn't lock the mutex in time (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_timeout;
       return;
     } else if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return;
@@ -131,7 +161,11 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
     if (self->dequeuers) {
       thrd_code = cnd_signal(&self->cnd);
       if (thrd_code != thrd_success) {
-        // #TODO: Error Return
+        // Ignore mtx_unlock() error because we are in an error state anyway
+        mtx_unlock(&self->mut);
+        err->msg =
+            "Couldn't signal the conditional variable (" fifo_print_err_location
+            ").";
         err->status = true;
         err->code = fifo_error;
         return;
@@ -140,7 +174,7 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return;
@@ -150,7 +184,7 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
 
     thrd_code = mtx_lock(&self->mut);
     if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return;
@@ -161,7 +195,11 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
     if (self->dequeuers) {
       thrd_code = cnd_signal(&self->cnd);
       if (thrd_code != thrd_success) {
-        // #TODO: Error Return
+        // Ignore mtx_unlock() error because we are in an error state anyway
+        mtx_unlock(&self->mut);
+        err->msg =
+            "Couldn't signal the conditional variable (" fifo_print_err_location
+            ").";
         err->status = true;
         err->code = fifo_error;
         return;
@@ -170,7 +208,7 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return;
@@ -181,15 +219,20 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg,
   return;
 }
 
-FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
+FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
                          FifoError *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
   FifoMsg msg = {0};
+
+  if (err->status) {
+    return msg;
+  }
+
   int thrd_code = thrd_success;
 
-  if (timeout_s > 0.0) {
+  if (timeout_s > 0) {
     struct timespec timeout = fifo_compute_timeout(timeout_s, err);
 
     if (err->status) {
@@ -198,12 +241,13 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
 
     thrd_code = mtx_timedlock(&self->mut, &timeout);
     if (thrd_code == thrd_timedout) {
-      // #TODO: Error Return
+      err->msg =
+          "Couldn't lock the mutex in time (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_timeout;
       return msg;
     } else if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return msg;
@@ -212,16 +256,24 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
     self->dequeuers += 1;
     while (!arrlen(self->elems)) {
       thrd_code = cnd_timedwait(&self->cnd, &self->mut, &timeout);
-      if (thrd_code == thrd_timedout) {
-        // #TODO: Error Return
-        err->status = true;
-        err->code = fifo_timeout;
-        return msg;
-      } else if (thrd_code != thrd_success) {
-        // #TODO: Error Return
-        err->status = true;
-        err->code = fifo_error;
-        return msg;
+      if (thrd_code != thrd_success) {
+        self->dequeuers -= 1;
+        // Ignore mtx_unlock() error because we are in an error state anyway
+        mtx_unlock(&self->mut);
+
+        if (thrd_code == thrd_timedout) {
+          err->status = true;
+          err->code = fifo_timeout;
+          err->msg = "Couldn't recieve conditional variable signal in time "
+                     "(" fifo_print_err_location ").";
+          return msg;
+        } else {
+          err->msg = "Couldn't wait on conditional variable signal "
+                     "(" fifo_print_err_location ").";
+          err->status = true;
+          err->code = fifo_error;
+          return msg;
+        }
       }
     }
     self->dequeuers -= 1;
@@ -231,7 +283,7 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return msg;
@@ -241,7 +293,7 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
 
     thrd_code = mtx_lock(&self->mut);
     if (thrd_code != thrd_success) {
-      // #TODO: Error Return
+      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return msg;
@@ -251,7 +303,11 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
     while (!arrlen(self->elems)) {
       thrd_code = cnd_wait(&self->cnd, &self->mut);
       if (thrd_code != thrd_success) {
-        // #TODO: Error Return
+        self->dequeuers -= 1;
+        // Ignore mtx_unlock() error because we are in an error state anyway
+        mtx_unlock(&self->mut);
+        err->msg = "Couldn't wait on conditional variable signal "
+                   "(" fifo_print_err_location ").";
         err->status = true;
         err->code = fifo_error;
         return msg;
@@ -264,7 +320,7 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, double const timeout_s,
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code == thrd_error) {
-      // #TODO: Error Return
+      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
       err->status = true;
       err->code = fifo_error;
       return msg;
@@ -282,18 +338,31 @@ int func1(void *arg) {
   char *MSGS[] = {"Hello", "World", "foo", "Quit"};
   FifoError err = {0};
 
+  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
   msg.msg = MSGS[0];
   fifo_enqueue_msg(fifo, msg, -1, &err);
+  if (err.status) {
+    printf("Error Enqueue 1\n");
+  }
   msg.msg = MSGS[1];
   thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
   fifo_enqueue_msg(fifo, msg, -1, &err);
+  if (err.status) {
+    printf("Error Enqueue 2\n");
+  }
   msg.msg = MSGS[2];
   thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
   fifo_enqueue_msg(fifo, msg, -1, &err);
-  msg.msg = MSGS[2];
+  if (err.status) {
+    printf("Error Enqueue 3\n");
+  }
+  msg.msg = MSGS[3];
   msg.state = -1;
   thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
   fifo_enqueue_msg(fifo, msg, -1, &err);
+  if (err.status) {
+    printf("Error Enqueue 4\n");
+  }
 
   return thrd_success;
 }
@@ -339,19 +408,20 @@ int main(void) {
   }
 
   do {
-    msg = fifo_dequeue_msg(&fifo, 0.5, &err);
+    msg = fifo_dequeue_msg(&fifo, 1, &err);
     if (err.code == fifo_timeout) {
-      printf("timeout, break\n");
+      printf("%s\n", err.msg);
+      err.status = false;
+      err.code = fifo_success;
     } else if (err.code == fifo_error) {
-
-      printf("error, break\n");
+      printf("error\n");
+    } else {
+      printf("Msg recieved from thread %ld: %s\n", (long)msg.data, msg.msg);
     }
-
-    printf("Msg recieved from thread %ld: %s\n", (long)msg.data, msg.msg);
   } while (msg.state != -1 && !err.status);
 
   if (thrd_join(thread1, &res)) {
-    fprintf(stderr, "Error joining thread 2...\n");
+    fprintf(stderr, "Error joining thread 1...\n");
     return -1;
   }
 
