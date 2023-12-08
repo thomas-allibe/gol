@@ -1,18 +1,17 @@
-#include <math.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <threads.h>
-#include <time.h>
+// Not high performance if a lot of messages are recieved simultaneously
+// because of dynamic array elements moved during dequeue.
+// Using circular buffer may be faster, but I have to think about buffer
+// resizing!!!
+//
+//
+//
+//
+//
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#define STB_DS_IMPLEMENTATION
-#include "stb_ds.h"
-#pragma GCC diagnostic pop
+#ifndef _FIFO_H_
+
+#include <stdbool.h>
+#include <threads.h>
 
 #define FIFO_ERR_MAX_MSG_LENGTH 256
 
@@ -45,6 +44,25 @@ typedef struct Fifo {
   cnd_t cnd;
   int dequeuers;
 } Fifo;
+
+void fifo_create(Fifo *const self, FifoError *const err);
+void fifo_destroy(Fifo *const self, FifoError *const err);
+void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
+                      FifoError *const err);
+FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
+                         FifoError *const err);
+#endif // !_FIFO_H_
+
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef FIFO_IMPLEMENTATION
+
+#include "stb_ds.h"
+#include <assert.h>
+#include <time.h>
 
 void fifo_create(Fifo *const self, FifoError *const err) {
   assert(self && "self can't be NULL");
@@ -330,111 +348,4 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
   // Success
   return msg;
 }
-
-int func1(void *arg) {
-
-  Fifo *fifo = (Fifo *)arg;
-  FifoMsg msg = {.data = (void *)1};
-  char *MSGS[] = {"Hello", "World", "foo", "Quit"};
-  FifoError err = {0};
-
-  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
-  msg.msg = MSGS[0];
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-  if (err.status) {
-    printf("Error Enqueue 1\n");
-  }
-  msg.msg = MSGS[1];
-  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-  if (err.status) {
-    printf("Error Enqueue 2\n");
-  }
-  msg.msg = MSGS[2];
-  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-  if (err.status) {
-    printf("Error Enqueue 3\n");
-  }
-  msg.msg = MSGS[3];
-  msg.state = -1;
-  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-  if (err.status) {
-    printf("Error Enqueue 4\n");
-  }
-
-  return thrd_success;
-}
-
-int func2(void *arg) {
-
-  Fifo *fifo = (Fifo *)arg;
-  FifoMsg msg = {.data = (void *)2};
-  char *MSGS[] = {"Hello", "World", "foo"};
-  FifoError err = {0};
-
-  msg.msg = MSGS[0];
-  thrd_sleep(&(struct timespec){.tv_sec = 1}, NULL);
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-  msg.msg = MSGS[1];
-  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-  msg.msg = MSGS[2];
-  thrd_sleep(&(struct timespec){.tv_sec = 2}, NULL);
-  fifo_enqueue_msg(fifo, msg, -1, &err);
-
-  return thrd_success;
-}
-
-int main(void) {
-  FifoError err = {0};
-  Fifo fifo = {0};
-  fifo_create(&fifo, &err);
-
-  thrd_t thread1 = {0};
-  thrd_t thread2 = {0};
-  int res = 0;
-  FifoMsg msg = {0};
-
-  if (thrd_create(&thread1, &func1, &fifo) != thrd_success) {
-    fprintf(stderr, "Error creating thread 1...\n");
-    return -1;
-  }
-
-  if (thrd_create(&thread2, &func2, &fifo) != thrd_success) {
-    fprintf(stderr, "Error creating thread 2...\n");
-    return -1;
-  }
-
-  do {
-    msg = fifo_dequeue_msg(&fifo, 1, &err);
-    if (err.code == fifo_timeout) {
-      printf("%s\n", err.msg);
-      err.status = false;
-      err.code = fifo_success;
-    } else if (err.code == fifo_error) {
-      printf("error\n");
-    } else {
-      printf("Msg recieved from thread %ld: %s\n", (long)msg.data, msg.msg);
-    }
-  } while (msg.state != -1 && !err.status);
-
-  if (thrd_join(thread1, &res)) {
-    fprintf(stderr, "Error joining thread 1...\n");
-    return -1;
-  }
-
-  printf("Thread 1 return code: %d\n", res);
-
-  if (thrd_join(thread2, &res)) {
-    fprintf(stderr, "Error joining thread 2...\n");
-    return -1;
-  }
-
-  printf("Thread 2 return code: %d\n", res);
-
-  fifo_destroy(&fifo, &err);
-
-  return 0;
-}
+#endif // FIFO_IMPLEMENTATION

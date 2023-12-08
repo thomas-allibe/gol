@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c2x -Wall -pedantic -Wextra -Wconversion -Werror -g
+CFLAGS = -std=c2x -Wall -pedantic -Wextra -Wconversion -Werror -O3
 INCFLAGS = -I /usr/local/include -I ./include
 LINKFLAGS = -lm -l:libraylib.a -L /usr/local/lib
 EXEC = gol
@@ -23,6 +23,9 @@ obj/%.o: src/%.c
 
 #build/$(EXEC): src/main.c
 #	$(CC) -o $@ $< $(CFLAGS) $(LIBFLAGS) $(LINKFLAGS)
+
+fifotest: src/fifotest.c
+	gcc $^ -o build/fifotest $(CFLAGS) $(INCFLAGS)
 
 start:
 	@echo ""
