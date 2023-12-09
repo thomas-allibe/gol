@@ -3,34 +3,31 @@
 // Using circular buffer may be faster, but I have to think about buffer
 // resizing!!!
 //
-//
-//
-//
-//
 
 #ifndef _FIFO_H_
+#define _FIFO_H_
 
+#include "error.h"
 #include <stdbool.h>
 #include <threads.h>
 
-#define FIFO_ERR_MAX_MSG_LENGTH 256
-
-#define fifo_to_str_literal(s) _fifo_to_str_literal_(s)
-#define _fifo_to_str_literal_(s) #s
-
-#define fifo_print_err_location __FILE__ ":" fifo_to_str_literal(__LINE__)
-
-typedef enum FifoErrorCode {
-  fifo_success = 0, // It's all good man!
-  fifo_timeout = 1, // IT'S TIME TO STOP!
-  fifo_error = 2    // This is fine...
-} FifoErrorCode;
-
-typedef struct FifoError {
-  bool status;        // T: there is an error, F: no error
-  FifoErrorCode code; // Error code to allow switch case on the error
-  char *msg; // Human readable error cause. Do not try to modify it, it's static
-} FifoError;
+// #define fifo_to_str_literal(s) _fifo_to_str_literal_(s)
+// #define _fifo_to_str_literal_(s) #s
+//
+// #define error_print_err_location __FILE__ ":" fifo_to_str_literal(__LINE__)
+//
+// typedef enum FifoErrorCode {
+//   fifo_success = 0, // It's all good man!
+//   fifo_timeout = 1, // IT'S TIME TO STOP!
+//   error_generic = 2    // This is fine...
+// } FifoErrorCode;
+//
+// typedef struct FifoError {
+//   bool status;        // T: there is an error, F: no error
+//   FifoErrorCode code; // Error code to allow switch case on the error
+//   char *msg; // Human readable error cause. Do not try to modify it, it's
+//   static
+// } FifoError;
 
 typedef struct FifoMsg {
   int state;  // Could represent a state / action / ...
@@ -45,12 +42,12 @@ typedef struct Fifo {
   int dequeuers;
 } Fifo;
 
-void fifo_create(Fifo *const self, FifoError *const err);
-void fifo_destroy(Fifo *const self, FifoError *const err);
+void fifo_create(Fifo *const self, Error *const err);
+void fifo_destroy(Fifo *const self, Error *const err);
 void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
-                      FifoError *const err);
+                      Error *const err);
 FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
-                         FifoError *const err);
+                         Error *const err);
 #endif // !_FIFO_H_
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -58,13 +55,14 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 //////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////
 
+// #define FIFO_IMPLEMENTATION
 #ifdef FIFO_IMPLEMENTATION
 
 #include "stb_ds.h"
 #include <assert.h>
 #include <time.h>
 
-void fifo_create(Fifo *const self, FifoError *const err) {
+void fifo_create(Fifo *const self, Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
@@ -74,18 +72,18 @@ void fifo_create(Fifo *const self, FifoError *const err) {
 
   if (cnd_init(&self->cnd) == thrd_error) {
     err->msg =
-        "Could not initialize Conditional Variable (" fifo_print_err_location
+        "Could not initialize Conditional Variable (" error_print_err_location
         ").";
     err->status = true;
-    err->code = fifo_error;
+    err->code = error_generic;
     return;
   }
 
   if (mtx_init(&self->mut, mtx_timed) == thrd_error) {
     cnd_destroy(&self->cnd);
-    err->msg = "Could not initialize Mutex (" fifo_print_err_location ").";
+    err->msg = "Could not initialize Mutex (" error_print_err_location ").";
     err->status = true;
-    err->code = fifo_error;
+    err->code = error_generic;
     return;
   }
 
@@ -95,7 +93,7 @@ void fifo_create(Fifo *const self, FifoError *const err) {
   return;
 }
 
-void fifo_destroy(Fifo *const self, FifoError *const err) {
+void fifo_destroy(Fifo *const self, Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
@@ -110,8 +108,7 @@ void fifo_destroy(Fifo *const self, FifoError *const err) {
   return;
 }
 
-struct timespec fifo_compute_timeout(long const timeout_s,
-                                     FifoError *const err) {
+struct timespec fifo_compute_timeout(long const timeout_s, Error *const err) {
   assert(err && "err can't be NULL, error handling is important!");
 
   struct timespec timeout = {0};
@@ -121,9 +118,9 @@ struct timespec fifo_compute_timeout(long const timeout_s,
   }
 
   if (!timespec_get(&timeout, TIME_UTC)) {
-    err->msg = "Could not get timespec (" fifo_print_err_location ").";
+    err->msg = "Could not get timespec (" error_print_err_location ").";
     err->status = true;
-    err->code = fifo_error;
+    err->code = error_generic;
     return timeout;
   }
 
@@ -133,9 +130,9 @@ struct timespec fifo_compute_timeout(long const timeout_s,
     timeout.tv_sec += (unsigned long)timeout_s;
 #pragma GCC diagnostic pop
   } else {
-    err->msg = "Invalid timeout, can't be <=0 (" fifo_print_err_location ").";
+    err->msg = "Invalid timeout, can't be <=0 (" error_print_err_location ").";
     err->status = true;
-    err->code = fifo_error;
+    err->code = error_generic;
     return timeout;
   }
 
@@ -144,7 +141,7 @@ struct timespec fifo_compute_timeout(long const timeout_s,
 }
 
 void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
-                      FifoError *const err) {
+                      Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
@@ -154,7 +151,7 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
 
   int thrd_code = thrd_success;
 
-  if (timeout_s > 0) {
+  if (timeout_s >= 0) {
     struct timespec timeout = fifo_compute_timeout(timeout_s, err);
     if (err->status) {
       return;
@@ -163,14 +160,14 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
     thrd_code = mtx_timedlock(&self->mut, &timeout);
     if (thrd_code == thrd_timedout) {
       err->msg =
-          "Couldn't lock the mutex in time (" fifo_print_err_location ").";
+          "Couldn't lock the mutex in time (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_timeout;
+      err->code = error_timeout;
       return;
     } else if (thrd_code != thrd_success) {
-      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't lock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return;
     }
 
@@ -181,20 +178,19 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
       if (thrd_code != thrd_success) {
         // Ignore mtx_unlock() error because we are in an error state anyway
         mtx_unlock(&self->mut);
-        err->msg =
-            "Couldn't signal the conditional variable (" fifo_print_err_location
-            ").";
+        err->msg = "Couldn't signal the conditional variable "
+                   "(" error_print_err_location ").";
         err->status = true;
-        err->code = fifo_error;
+        err->code = error_generic;
         return;
       }
     }
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code != thrd_success) {
-      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't unlock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return;
     }
 
@@ -202,9 +198,9 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
 
     thrd_code = mtx_lock(&self->mut);
     if (thrd_code != thrd_success) {
-      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't lock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return;
     }
 
@@ -215,20 +211,19 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
       if (thrd_code != thrd_success) {
         // Ignore mtx_unlock() error because we are in an error state anyway
         mtx_unlock(&self->mut);
-        err->msg =
-            "Couldn't signal the conditional variable (" fifo_print_err_location
-            ").";
+        err->msg = "Couldn't signal the conditional variable "
+                   "(" error_print_err_location ").";
         err->status = true;
-        err->code = fifo_error;
+        err->code = error_generic;
         return;
       }
     }
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code != thrd_success) {
-      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't unlock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return;
     }
   }
@@ -238,7 +233,7 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
 }
 
 FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
-                         FifoError *const err) {
+                         Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
@@ -250,7 +245,7 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 
   int thrd_code = thrd_success;
 
-  if (timeout_s > 0) {
+  if (timeout_s >= 0) {
     struct timespec timeout = fifo_compute_timeout(timeout_s, err);
 
     if (err->status) {
@@ -260,14 +255,14 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
     thrd_code = mtx_timedlock(&self->mut, &timeout);
     if (thrd_code == thrd_timedout) {
       err->msg =
-          "Couldn't lock the mutex in time (" fifo_print_err_location ").";
+          "Couldn't lock the mutex in time (" error_print_err_location ").";
       err->status = true;
       err->code = fifo_timeout;
       return msg;
     } else if (thrd_code != thrd_success) {
-      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't lock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return msg;
     }
 
@@ -283,13 +278,13 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
           err->status = true;
           err->code = fifo_timeout;
           err->msg = "Couldn't recieve conditional variable signal in time "
-                     "(" fifo_print_err_location ").";
+                     "(" error_print_err_location ").";
           return msg;
         } else {
           err->msg = "Couldn't wait on conditional variable signal "
-                     "(" fifo_print_err_location ").";
+                     "(" error_print_err_location ").";
           err->status = true;
-          err->code = fifo_error;
+          err->code = error_generic;
           return msg;
         }
       }
@@ -301,9 +296,9 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code != thrd_success) {
-      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't unlock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return msg;
     }
 
@@ -311,9 +306,9 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 
     thrd_code = mtx_lock(&self->mut);
     if (thrd_code != thrd_success) {
-      err->msg = "Couldn't lock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't lock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return msg;
     }
 
@@ -325,9 +320,9 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
         // Ignore mtx_unlock() error because we are in an error state anyway
         mtx_unlock(&self->mut);
         err->msg = "Couldn't wait on conditional variable signal "
-                   "(" fifo_print_err_location ").";
+                   "(" error_print_err_location ").";
         err->status = true;
-        err->code = fifo_error;
+        err->code = error_generic;
         return msg;
       }
     }
@@ -338,9 +333,9 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 
     thrd_code = mtx_unlock(&self->mut);
     if (thrd_code == thrd_error) {
-      err->msg = "Couldn't unlock the mutex (" fifo_print_err_location ").";
+      err->msg = "Couldn't unlock the mutex (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_error;
+      err->code = error_generic;
       return msg;
     }
   }

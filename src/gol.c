@@ -1,11 +1,12 @@
 #include "gol.h"
-#include "layout.h"
 #include <raylib.h>
 #include <stdlib.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
+#define FIFO_IMPLEMENTATION
+#include "fifo.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 #pragma GCC diagnostic pop
@@ -13,18 +14,18 @@
 i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
   (void)argc;
   (void)argv;
+  Error err = {0};
 
-  gol_init(self);
+  gol_init(self, &err);
 
 #ifdef GOL_DEBUG
   SetTraceLogLevel(LOG_ALL);
 #endif /* ifdef GOL_DEBUG */
 
   // Main game loop
-  while (!WindowShouldClose()) // Detect window close button or ESC key
-  {
+  while (!WindowShouldClose() && !err.status) {
 
-    gol_event(self);
+    gol_event(self, &err);
 
     gol_update(self);
 
@@ -37,10 +38,16 @@ i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
 
   CloseWindow(); // Close window and OpenGL context
 
-  return gol_deinit(self);
+  gol_deinit(self, &err);
+
+  if (err.status) {
+    return EXIT_FAILURE;
+  }
+
+  return EXIT_SUCCESS;
 }
 
-i32 gol_init(GolCtx *const self) {
+void gol_init(GolCtx *const self, Error *err) {
   self->screen = (Rectangle){.width = GOL_INITIAL_SCREEN_WIDTH,
                              .height = GOL_INITIAL_SCREEN_HEIGHT,
                              .x = 0.0f,
@@ -49,6 +56,31 @@ i32 gol_init(GolCtx *const self) {
   self->cell_size = GOL_INITIAL_GRID_WIDTH;
   self->cycle_period = GOL_INITIAL_CYCLE_PERIOD;
   self->draw_grid = true;
+
+  fifo_create(&self->fifo_thread_comp, err);
+  if (err->status) {
+    TraceLog(LOG_FATAL, "Could not create fifo:\n\t%s", err->msg);
+    return;
+  }
+
+  // Freed by Thread
+  GolThrdArg *thrd_args = malloc(sizeof(GolThrdArg));
+  *thrd_args = (GolThrdArg){
+      .fifo = &self->fifo_thread_comp,
+      .cycle_period = &self->cycle_period,
+      .cycle_nb = &self->cycle_nb,
+      .cycle_compute_time = &self->cycle_compute_time,
+
+      .buffer_index = &self->buffer_index,
+      .alive_cells_render_buffer_1 = &self->alive_cells_render_buffer_1,
+      .alive_cells_render_buffer_2 = &self->alive_cells_render_buffer_2};
+
+  if (thrd_create(&self->thread_comp, &gol_thread_compute_cycle, thrd_args) !=
+      thrd_success) {
+    // #TODO: Change assert to err handling
+    assert(0 && "Can't create the thread...");
+    return;
+  }
 
   // srand((u32)time(NULL));
   // for (u32 i = 0; i < 100; i++) {
@@ -76,10 +108,10 @@ i32 gol_init(GolCtx *const self) {
   SetWindowState(FLAG_WINDOW_RESIZABLE);
   SetTargetFPS(GOL_FPS); // Set our game to run at 60 frames-per-second
 
-  return 0;
+  return;
 }
 
-void gol_event(GolCtx *const self) {
+void gol_event(GolCtx *const self, Error *err) {
   // const double cur_time = GetTime();
   const Vector2 mouse_pos = GetMousePosition();
   const Vector2 mouse_delta = GetMouseDelta();
@@ -126,7 +158,22 @@ void gol_event(GolCtx *const self) {
     if (IsKeyDown(KEY_LEFT_CONTROL)) {
       // Mouse Left + Ctrl: toggle cell
       //
-      self->toggle_cell = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
+      // self->toggle_cell = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+      if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        // Malloc must be freed in the thread enqueue succeeded!
+        FifoMsg msg = {.state = gol_toggle_cell,
+                       .data = malloc(sizeof(GolMsgDataToggle))};
+        assert(msg.data && "Not enough memory, this is the end...");
+
+        ((GolMsgDataToggle *)msg.data)->cell_coord = self->mouse_cell_coord;
+        fifo_enqueue_msg(&self->fifo_thread_comp, msg, -1, err);
+
+        if (err->status) {
+          TraceLog(LOG_FATAL, "Could not message thread...\n\t%s", err->msg);
+          return;
+        }
+      }
     } else {
       // Mouse grid dragging
       //
@@ -165,79 +212,188 @@ void gol_update(GolCtx *const self) {
 
   // Handles cells editing
   //
-  if (self->toggle_cell) {
-    self->toggle_cell = false;
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-    const bool found = hmdel(self->alive_cells, self->mouse_cell_coord);
-#pragma GCC diagnostic pop
-    if (!found) {
-      Vector2 cell = self->mouse_cell_coord;
-      hmput(self->alive_cells, cell, 0);
-    }
-  }
+  //   if (self->toggle_cell) {
+  //     self->toggle_cell = false;
+  //
+  // #pragma GCC diagnostic push
+  // #pragma GCC diagnostic ignored "-Wunused-value"
+  // #pragma GCC diagnostic ignored "-Wsign-conversion"
+  //     const bool found = hmdel(self->alive_cells, self->mouse_cell_coord);
+  // #pragma GCC diagnostic pop
+  //     if (!found) {
+  //       Vector2 cell = self->mouse_cell_coord;
+  //       hmput(self->alive_cells, cell, 0);
+  //     }
+  //   }
 
   const double time_start = GetTime();
   if (self->play &&
       ((time_start - self->cycle_last_update) > self->cycle_period)) {
     // Iterate over alive cells to build a neighbour map of the board
     //
-    CellMap *neighbour = NULL;
+    // CellMap *neighbour = NULL;
+    //
+    // for (u32 i = 0; i < hmlen(self->alive_cells); i++) {
+    //   // Search cell 8 neighbour
+    //   for (float x = self->alive_cells[i].key.x - 1.0f;
+    //        x <= self->alive_cells[i].key.x + 1.0f; x++) {
+    //     for (float y = self->alive_cells[i].key.y - 1.0f;
+    //          y <= self->alive_cells[i].key.y + 1.0f; y++) {
+    //
+    //       const Vector2 adj_cell = {.x = x, .y = y};
+    //       const ptrdiff_t index = hmgeti(neighbour, adj_cell);
+    //
+    //       if (index == -1) {
+    //         // Doesn't exists
+    //         if (self->alive_cells[i].key.x == x &&
+    //             self->alive_cells[i].key.y == y) {
+    //           // Current cell
+    //           hmput(neighbour, adj_cell, 0);
+    //         } else {
+    //           // Not current cell
+    //           hmput(neighbour, adj_cell, 1);
+    //         }
+    //       } else {
+    //         // Exists
+    //         if (!(self->alive_cells[i].key.x == x &&
+    //               self->alive_cells[i].key.y == y)) {
+    //           // Not Current cell
+    //           neighbour[index].value += 1;
+    //         }
+    //       }
+    //     }
+    //   }
+    // }
 
-    for (u32 i = 0; i < hmlen(self->alive_cells); i++) {
-      // Search cell 8 neighbour
-      for (float x = self->alive_cells[i].key.x - 1.0f;
-           x <= self->alive_cells[i].key.x + 1.0f; x++) {
-        for (float y = self->alive_cells[i].key.y - 1.0f;
-             y <= self->alive_cells[i].key.y + 1.0f; y++) {
+    // Iterate over the neighbour map and add or remove alive cells depending
+    // on count
+    //     for (u32 i = 0; i < hmlen(neighbour); i++) {
+    //       if (neighbour[i].value < 2 || neighbour[i].value > 3) {
+    // #pragma GCC diagnostic push
+    // #pragma GCC diagnostic ignored "-Wunused-value"
+    // #pragma GCC diagnostic ignored "-Wsign-conversion"
+    //         hmdel(self->alive_cells, neighbour[i].key);
+    // #pragma GCC diagnostic pop
+    //       } else if (neighbour[i].value == 3) {
+    //         hmput(self->alive_cells, neighbour[i].key, 0);
+    //       }
+    //     }
+    //
+    //     hmfree(neighbour);
+    //
+    //     self->cycle_nb += 1;
+    //     self->cycle_last_update = GetTime();
+    //     self->cycle_compute_time = self->cycle_last_update - time_start;
+  }
+}
 
-          const Vector2 adj_cell = {.x = x, .y = y};
-          const ptrdiff_t index = hmgeti(neighbour, adj_cell);
+i32 gol_thread_compute_cycle(void *arg) {
+  GolThrdArg *thrd_args = (GolThrdArg *)arg;
 
-          if (index == -1) {
-            // Doesn't exists
-            if (self->alive_cells[i].key.x == x &&
-                self->alive_cells[i].key.y == y) {
-              // Current cell
-              hmput(neighbour, adj_cell, 0);
+  FifoMsg msg = {.state = gol_compute};
+  Error err = {0};
+  CellMap *alive_cells = NULL;
+  double cycle_last_update = 0.0;
+
+  while (msg.state != gol_quit && !err.status) {
+    msg = fifo_dequeue_msg(thrd_args->fifo, -1, &err);
+    if (err.status) {
+      msg.state = gol_error;
+    }
+
+    switch (msg.state) {
+    case gol_error: {
+      assert(0 && "Oh oh something gone wrong!");
+    } break;
+
+    case gol_toggle_cell: {
+
+      GolMsgDataToggle *msg_data = (GolMsgDataToggle *)msg.data;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-value"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+      const bool found = hmdel(alive_cells, msg_data->cell_coord);
+#pragma GCC diagnostic pop
+      if (!found) {
+        hmput(alive_cells, msg_data->cell_coord, 0);
+      }
+
+      free(msg_data);
+    } break;
+
+    case gol_compute: {
+
+      const double time_start = GetTime();
+
+      // Iterate over alive cells to build a neighbour map of the board
+      //
+      CellMap *neighbour = NULL;
+
+      for (u32 i = 0; i < hmlen(alive_cells); i++) {
+        // Search cell 8 neighbour
+        for (float x = alive_cells[i].key.x - 1.0f;
+             x <= alive_cells[i].key.x + 1.0f; x++) {
+          for (float y = alive_cells[i].key.y - 1.0f;
+               y <= alive_cells[i].key.y + 1.0f; y++) {
+
+            const Vector2 adj_cell = {.x = x, .y = y};
+            const ptrdiff_t index = hmgeti(neighbour, adj_cell);
+
+            if (index == -1) {
+              // Doesn't exists
+              if (alive_cells[i].key.x == x && alive_cells[i].key.y == y) {
+                // Current cell
+                hmput(neighbour, adj_cell, 0);
+              } else {
+                // Not current cell
+                hmput(neighbour, adj_cell, 1);
+              }
             } else {
-              // Not current cell
-              hmput(neighbour, adj_cell, 1);
-            }
-          } else {
-            // Exists
-            if (!(self->alive_cells[i].key.x == x &&
-                  self->alive_cells[i].key.y == y)) {
-              // Not Current cell
-              neighbour[index].value += 1;
+              // Exists
+              if (!(alive_cells[i].key.x == x && alive_cells[i].key.y == y)) {
+                // Not Current cell
+                neighbour[index].value += 1;
+              }
             }
           }
         }
       }
-    }
 
-    // Iterate over the neighbour map and add or remove alive cells depending
-    // on count
-    for (u32 i = 0; i < hmlen(neighbour); i++) {
-      if (neighbour[i].value < 2 || neighbour[i].value > 3) {
+      // Iterate over the neighbour map and add or remove alive cells depending
+      // on count
+      for (u32 i = 0; i < hmlen(neighbour); i++) {
+        if (neighbour[i].value < 2 || neighbour[i].value > 3) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-value"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
-        hmdel(self->alive_cells, neighbour[i].key);
+          hmdel(alive_cells, neighbour[i].key);
 #pragma GCC diagnostic pop
-      } else if (neighbour[i].value == 3) {
-        hmput(self->alive_cells, neighbour[i].key, 0);
+        } else if (neighbour[i].value == 3) {
+          hmput(alive_cells, neighbour[i].key, 0);
+        }
       }
+
+      hmfree(neighbour);
+
+      *thrd_args->cycle_nb += 1;
+      cycle_last_update = GetTime();
+      *thrd_args->cycle_compute_time = cycle_last_update - time_start;
+
+    } break;
+
+    default:
+      assert(0 && "Don't go here");
     }
-
-    hmfree(neighbour);
-
-    self->cycle_nb += 1;
-    self->cycle_last_update = GetTime();
-    self->cycle_compute_time = self->cycle_last_update - time_start;
   }
+
+  if (alive_cells) {
+    hmfree(alive_cells);
+  }
+
+  free(thrd_args);
+
+  return err.status;
 }
 
 void gol_draw(GolCtx *const self) {
@@ -471,9 +627,17 @@ void gol_draw_dbg(const GolCtx *const self) {
            GOL_DEBUG_COLOR);
 }
 
-int gol_deinit(GolCtx *const self) {
+int gol_deinit(GolCtx *const self, Error *err) {
+  // #TODO: Use err
+  (void)err;
+
   if (self->alive_cells) {
     hmfree(self->alive_cells);
+  }
+
+  i32 result;
+  if (thrd_join(self->thread_comp, &result)) {
+    assert(0 && "Error joining thread...");
   }
   return EXIT_SUCCESS;
 }

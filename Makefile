@@ -24,7 +24,7 @@ obj/%.o: src/%.c
 #build/$(EXEC): src/main.c
 #	$(CC) -o $@ $< $(CFLAGS) $(LIBFLAGS) $(LINKFLAGS)
 
-fifotest: src/fifotest.c
+fifotest: test/fifotest.c
 	gcc $^ -o build/fifotest $(CFLAGS) $(INCFLAGS)
 
 start:
