@@ -97,6 +97,7 @@ void fifo_destroy(Fifo *const self, Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
 
+  // #TODO: Merge errors
   // #TODO: what happens if a thread is waiting on it?
   cnd_destroy(&self->cnd);
   mtx_destroy(&self->mut);
@@ -257,7 +258,7 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
       err->msg =
           "Couldn't lock the mutex in time (" error_print_err_location ").";
       err->status = true;
-      err->code = fifo_timeout;
+      err->code = error_timeout;
       return msg;
     } else if (thrd_code != thrd_success) {
       err->msg = "Couldn't lock the mutex (" error_print_err_location ").";
@@ -276,7 +277,7 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 
         if (thrd_code == thrd_timedout) {
           err->status = true;
-          err->code = fifo_timeout;
+          err->code = error_timeout;
           err->msg = "Couldn't recieve conditional variable signal in time "
                      "(" error_print_err_location ").";
           return msg;
