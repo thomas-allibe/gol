@@ -69,15 +69,15 @@ void gol_init(GolCtx *const self, Error *const err) {
   //   for (u32 j = 0; j < 100; j++) {
   //     if ((rand() * 2.0 / RAND_MAX) > 0.5) {
   //       const Vector2 cell = {
-  //           .x = floorf(((float)rand() * 100.0f) / (float)RAND_MAX),
-  //           .y = floorf(((float)rand() * 100.0f) / (float)RAND_MAX)};
+  //           .x = floorf(((f32)rand() * 100.0f) / (f32)RAND_MAX),
+  //           .y = floorf(((f32)rand() * 100.0f) / (f32)RAND_MAX)};
   //       hmput(self->alive_cells, cell, 0);
   //     }
   //   }
   // }
-  for (u32 i = 0; i < 1000; i++) {
-    for (u32 j = 0; j < 1000; j++) {
-      const Vector2 cell = {.x = (float)i, .y = (float)j};
+  for (u32 i = 0; i < 900; i++) {
+    for (u32 j = 0; j < 900; j++) {
+      const Vector2 cell = {.x = (f32)i, .y = (f32)j};
       hmput(self->alive_cells, cell, 0);
     }
   }
@@ -131,14 +131,14 @@ void gol_init(GolCtx *const self, Error *const err) {
 }
 
 void gol_event(GolCtx *const self, Error *const err) {
-  // const double cur_time = GetTime();
+  // const f64 cur_time = GetTime();
   const Vector2 mouse_pos = GetMousePosition();
   const Vector2 mouse_delta = GetMouseDelta();
   const Vector2 mouse_wheel = GetMouseWheelMoveV();
 
   if (IsWindowResized()) {
-    self->screen.width = (float)GetRenderWidth();
-    self->screen.height = (float)GetRenderHeight();
+    self->screen.width = (f32)GetRenderWidth();
+    self->screen.height = (f32)GetRenderHeight();
   }
 
   // Enable Debug View
@@ -225,13 +225,13 @@ void gol_event(GolCtx *const self, Error *const err) {
   // Keyboard Up Key
   //
   if (IsKeyPressed(KEY_UP)) {
-    self->cycle_period = (i32)((float)self->cycle_period / 1.25f);
+    self->cycle_period = (i32)((f32)self->cycle_period / 1.25f);
   }
 
   // Keyboard Down Key
   //
   if (IsKeyPressed(KEY_DOWN)) {
-    self->cycle_period = (i32)((float)self->cycle_period * 1.25f);
+    self->cycle_period = (i32)((f32)self->cycle_period * 1.25f);
   }
 }
 
@@ -241,7 +241,7 @@ void gol_update(GolCtx *const self) {
   self->cam_pos.x += self->velocity.x;
   self->cam_pos.y += self->velocity.y;
 
-  const double time_start = GetTime();
+  const f64 time_start = GetTime();
 
   // #TODO: Remove
   if (self->play &&
@@ -256,7 +256,7 @@ i32 gol_cct(void *arg) {
 
   FifoMsg msg = {.state = gol_cct_compute};
   Error err = {0};
-  double cycle_last_update = 0.0;
+  f64 cycle_last_update = 0.0;
   bool play = false;
 
   gol_cct_upddate_render_buffer(args, *args->alive_cells, &err);
@@ -308,7 +308,7 @@ i32 gol_cct(void *arg) {
 
     case gol_cct_compute: {
 
-      const double time_start = GetTime();
+      const f64 time_start = GetTime();
 
       // Iterate over alive cells to build a neighbour map of the board
       //
@@ -316,9 +316,9 @@ i32 gol_cct(void *arg) {
 
       for (u32 i = 0; i < hmlen(*args->alive_cells); i++) {
         // Search cell 8 neighbour
-        for (float x = (*args->alive_cells)[i].key.x - 1.0f;
+        for (f32 x = (*args->alive_cells)[i].key.x - 1.0f;
              x <= (*args->alive_cells)[i].key.x + 1.0f; x++) {
-          for (float y = (*args->alive_cells)[i].key.y - 1.0f;
+          for (f32 y = (*args->alive_cells)[i].key.y - 1.0f;
                y <= (*args->alive_cells)[i].key.y + 1.0f; y++) {
 
             const Vector2 adj_cell = {.x = x, .y = y};
@@ -469,7 +469,7 @@ void gol_draw_grid(const GolCtx *const self) {
   //
   // Start by drawing the first leftmost vertical line
   i = 0; // For debug
-  for (float x = self->g_screen.x + offset.x;
+  for (f32 x = self->g_screen.x + offset.x;
        x <= self->g_screen.x + self->g_screen.width; x += self->cell_size) {
     start_pos.x = x;
     start_pos.y = self->g_screen.y;
@@ -495,7 +495,7 @@ void gol_draw_grid(const GolCtx *const self) {
   //
   // Start by drawing the first topmost horizontal line
   i = 0; // For debug
-  for (float y = self->g_screen.y + offset.y;
+  for (f32 y = self->g_screen.y + offset.y;
        y <= self->g_screen.y + self->g_screen.height; y += self->cell_size) {
     start_pos.x = self->g_screen.x;
     start_pos.y = y;
@@ -522,9 +522,9 @@ void gol_draw_cells(GolCtx *const self, Error *const err) {
                                 .y = self->cam_pos.y,
                                 .width = self->g_screen.width,
                                 .height = self->g_screen.height};
-  const float cell_size_offset =
+  const f32 cell_size_offset =
       self->cell_size * (1.0f - GOL_ALIVE_CELL_SIZE_RATIO);
-  const float cell_pos_offset = cell_size_offset / 2;
+  const f32 cell_pos_offset = cell_size_offset / 2;
 
   if (mtx_lock(&self->buffer_index_mtx) != thrd_success) {
     err->msg = "Could not lock Mutex (" error_print_err_location ").";
@@ -632,8 +632,8 @@ void gol_draw_dbg(const GolCtx *const self) {
 
   const Rectangle title_rec = layout_get();
   const char *const title = "Debug Info:";
-  const float title_x_offset =
-      (title_rec.width - (float)MeasureText(title, GOL_DEBUG_TITLE_FONT_SIZE)) /
+  const f32 title_x_offset =
+      (title_rec.width - (f32)MeasureText(title, GOL_DEBUG_TITLE_FONT_SIZE)) /
       2.0f;
   DrawText(title, (i32)(title_rec.x + title_x_offset), (i32)title_rec.y,
            GOL_DEBUG_TITLE_FONT_SIZE, GOL_DEBUG_COLOR);
@@ -667,7 +667,7 @@ void gol_draw_dbg(const GolCtx *const self) {
   const Rectangle cell_nb_rec = layout_get();
   DrawText(TextFormat("Cycle: %lu, Number of cells: %d, Compute time: %lf ms",
                       self->cycle_nb, hmlen(self->alive_cells),
-                      self->cycle_compute_time * 1000.0),
+                      self->cycle_compute_time * 1e3),
            (i32)cell_nb_rec.x, (i32)cell_nb_rec.y, GOL_DEBUG_FONT_SIZE,
            GOL_DEBUG_COLOR);
 }
@@ -706,10 +706,10 @@ int gol_deinit(GolCtx *const self, Error *const err) {
   return err->status ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-float gol_move_ease(const double cur_time, const double start_time) {
-  const double delta = cur_time - start_time;
+f32 gol_move_ease(const f64 cur_time, const f64 start_time) {
+  const f64 delta = cur_time - start_time;
 
-  return (float)(1.0 - exp(-2.0 * delta));
+  return (f32)(1.0 - exp(-2.0 * delta));
 }
 void gol_print_rec(const Rectangle rec, const char *const prefix) {
   TraceLog(LOG_DEBUG, "%s {x: %f, y: %f, w: %f, h: %f}\n", prefix, rec.x, rec.y,

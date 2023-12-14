@@ -50,11 +50,11 @@ typedef struct GolCctArgs {
   Vector2 **alive_cells_render_buffer_1; // Write
   Vector2 **alive_cells_render_buffer_2; // Write
   i32 *buffer_index;                     // Write
-  mtx_t *buffer_index_mtx;    // Prevents CCT to change index when main thread
-                              // renders alive cells
-  i32 *cycle_period;          // Time in ms between two cycles. Read Only
-  double *cycle_compute_time; // Time to compute a lifecycle. R/W
-  u64 *cycle_nb;              // Number of cycle since start. R/W
+  mtx_t *buffer_index_mtx; // Prevents CCT to change index when main thread
+                           // renders alive cells
+  i32 *cycle_period;       // Time in ms between two cycles. Read Only
+  f64 *cycle_compute_time; // Time to compute a lifecycle. R/W
+  u64 *cycle_nb;           // Number of cycle since start. R/W
 } GolCctArgs;
 
 typedef struct GolMsgDataToggle {
@@ -69,8 +69,8 @@ typedef struct GolCtx {
                    // top left corner of g_screen
   Vector2 velocity; // Camera velocity
 
-  bool draw_grid;  // Should render grid
-  float cell_size; // Width (and height) of a cell
+  bool draw_grid; // Should render grid
+  f32 cell_size;  // Width (and height) of a cell
 
   bool mouse_on_g_screen;   // Is mouse in g_screen bounds
   Vector2 mouse_cell_coord; // Coordinates of the cell under cursor
@@ -88,16 +88,16 @@ typedef struct GolCtx {
   Vector2 *alive_cells_render_buffer_2; // Two cells buffers. When one is
                                         // being built, the other one is used
                                         // for rendering. Main Thread Read Only
-  i32 buffer_index;          // Which buffer to render. Main Thread Read Only
-  mtx_t buffer_index_mtx;    // Prevents CCT to change index when main thread
-                             // renders alive cells
-  i32 cycle_period;          // Time in ms between two cycles. CCT Read Only
-  double cycle_last_update;  // Time of the last cell lifecycle update. Main
-                             // Thread Read Only
-  double cycle_compute_time; // Time to compute a lifecycle. Main
-                             // Thread Read Only
-  u64 cycle_nb;              // Number of cycle since start. Main
-                             // Thread Read Only
+  i32 buffer_index;       // Which buffer to render. Main Thread Read Only
+  mtx_t buffer_index_mtx; // Prevents CCT to change index when main thread
+                          // renders alive cells
+  i32 cycle_period;       // Time in ms between two cycles. CCT Read Only
+  f64 cycle_last_update;  // Time of the last cell lifecycle update. Main
+                          // Thread Read Only
+  f64 cycle_compute_time; // Time to compute a lifecycle. Main
+                          // Thread Read Only
+  u64 cycle_nb;           // Number of cycle since start. Main
+                          // Thread Read Only
 
   bool show_dbg; // Shoul show debug info ?
 } GolCtx;
@@ -122,7 +122,7 @@ void gol_draw_dbg(const GolCtx *self);
 int gol_deinit(GolCtx *self, Error *err);
 
 // Utility
-float gol_move_ease(double cur_time, double start_time);
+f32 gol_move_ease(f64 cur_time, f64 start_time);
 void gol_print_rec(Rectangle rec, const char *prefix);
 
 #endif // !_GOL_H_
