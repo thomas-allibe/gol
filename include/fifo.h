@@ -8,26 +8,9 @@
 #define _FIFO_H_
 
 #include "error.h"
+#include "types.h"
 #include <stdbool.h>
 #include <threads.h>
-
-// #define fifo_to_str_literal(s) _fifo_to_str_literal_(s)
-// #define _fifo_to_str_literal_(s) #s
-//
-// #define error_print_err_location __FILE__ ":" fifo_to_str_literal(__LINE__)
-//
-// typedef enum FifoErrorCode {
-//   fifo_success = 0, // It's all good man!
-//   fifo_timeout = 1, // IT'S TIME TO STOP!
-//   error_generic = 2    // This is fine...
-// } FifoErrorCode;
-//
-// typedef struct FifoError {
-//   bool status;        // T: there is an error, F: no error
-//   FifoErrorCode code; // Error code to allow switch case on the error
-//   char *msg; // Human readable error cause. Do not try to modify it, it's
-//   static
-// } FifoError;
 
 typedef struct FifoMsg {
   int state;  // Could represent a state / action / ...
@@ -42,12 +25,10 @@ typedef struct Fifo {
   int dequeuers;
 } Fifo;
 
-void fifo_create(Fifo *const self, Error *const err);
-void fifo_destroy(Fifo *const self, Error *const err);
-void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
-                      Error *const err);
-FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
-                         Error *const err);
+void fifo_create(Fifo *self, Error *err);
+void fifo_destroy(Fifo *self, Error *err);
+void fifo_enqueue_msg(Fifo *self, FifoMsg msg, i64 timeout_ms, Error *err);
+FifoMsg fifo_dequeue_msg(Fifo *self, i64 timeout_ms, Error *err);
 #endif // !_FIFO_H_
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -109,7 +90,7 @@ void fifo_destroy(Fifo *const self, Error *const err) {
   return;
 }
 
-struct timespec fifo_compute_timeout(long const timeout_s, Error *const err) {
+struct timespec fifo_compute_timeout(i32 const timeout_ms, Error *const err) {
   assert(err && "err can't be NULL, error handling is important!");
 
   struct timespec timeout = {0};
@@ -125,11 +106,11 @@ struct timespec fifo_compute_timeout(long const timeout_s, Error *const err) {
     return timeout;
   }
 
-  if (timeout_s > 0) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-    timeout.tv_sec += (unsigned long)timeout_s;
-#pragma GCC diagnostic pop
+  if (timeout_ms > 0) {
+    timeout.tv_nsec += (i64)timeout_ms * 1000000;
+    const i64 seconds = timeout.tv_nsec / 1000000000;
+    timeout.tv_sec += seconds;
+    timeout.tv_nsec -= seconds * 1000000000;
   } else {
     err->msg = "Invalid timeout, can't be <=0 (" error_print_err_location ").";
     err->status = true;
@@ -141,7 +122,7 @@ struct timespec fifo_compute_timeout(long const timeout_s, Error *const err) {
   return timeout;
 }
 
-void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
+void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, i64 const timeout_ms,
                       Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
@@ -152,8 +133,8 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
 
   int thrd_code = thrd_success;
 
-  if (timeout_s >= 0) {
-    struct timespec timeout = fifo_compute_timeout(timeout_s, err);
+  if (timeout_ms >= 0) {
+    struct timespec timeout = fifo_compute_timeout(timeout_ms, err);
     if (err->status) {
       return;
     }
@@ -233,7 +214,7 @@ void fifo_enqueue_msg(Fifo *const self, FifoMsg const msg, long const timeout_s,
   return;
 }
 
-FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
+FifoMsg fifo_dequeue_msg(Fifo *const self, i64 const timeout_ms,
                          Error *const err) {
   assert(self && "self can't be NULL");
   assert(err && "err can't be NULL, error handling is important!");
@@ -246,8 +227,8 @@ FifoMsg fifo_dequeue_msg(Fifo *const self, long const timeout_s,
 
   int thrd_code = thrd_success;
 
-  if (timeout_s >= 0) {
-    struct timespec timeout = fifo_compute_timeout(timeout_s, err);
+  if (timeout_ms >= 0) {
+    struct timespec timeout = fifo_compute_timeout(timeout_ms, err);
 
     if (err->status) {
       return msg;

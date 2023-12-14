@@ -21,7 +21,7 @@
 #define GOL_INITIAL_SCREEN_WIDTH 1480.0
 #define GOL_INITIAL_SCREEN_HEIGHT 720.0
 #define GOL_INITIAL_GRID_WIDTH 50.0
-#define GOL_INITIAL_CYCLE_PERIOD 1.0
+#define GOL_INITIAL_CYCLE_PERIOD 1000
 
 #define GOL_ALIVE_CELL_SIZE_RATIO 0.9f
 
@@ -39,18 +39,20 @@ typedef enum GolCctState {
   gol_cct_quit,
   gol_cct_error,
   gol_cct_compute,
-  gol_cct_toggle_cell
+  gol_cct_toggle_cell,
+  gol_cct_toggle_play
 } GolCctState;
 
 // Use to send pointers from GolCtx members to Cycle Computation Thread (CCT)
 typedef struct GolCctArgs {
   Fifo *fifo;
+  GolCellMap **alive_cells; // Array of alive cells on the grid. R/W
   Vector2 **alive_cells_render_buffer_1; // Write
   Vector2 **alive_cells_render_buffer_2; // Write
   i32 *buffer_index;                     // Write
   mtx_t *buffer_index_mtx;    // Prevents CCT to change index when main thread
                               // renders alive cells
-  double *cycle_period;       // Time in seconds between two cycles. Read Only
+  i32 *cycle_period;          // Time in ms between two cycles. Read Only
   double *cycle_compute_time; // Time to compute a lifecycle. R/W
   u64 *cycle_nb;              // Number of cycle since start. R/W
 } GolCctArgs;
@@ -70,8 +72,6 @@ typedef struct GolCtx {
   bool draw_grid;  // Should render grid
   float cell_size; // Width (and height) of a cell
 
-  GolCellMap *alive_cells; // Array of alive cells on the grid.
-
   bool mouse_on_g_screen;   // Is mouse in g_screen bounds
   Vector2 mouse_cell_coord; // Coordinates of the cell under cursor
 
@@ -82,16 +82,18 @@ typedef struct GolCtx {
 
   // These have their adresses shared with the Cycle Computation Thread (CCT)
   //
+  GolCellMap *alive_cells; // Array of alive cells on the grid. Main Thread Read
+                           // Only (except at init)
   Vector2 *alive_cells_render_buffer_1;
   Vector2 *alive_cells_render_buffer_2; // Two cells buffers. When one is
                                         // being built, the other one is used
                                         // for rendering. Main Thread Read Only
-  i32 buffer_index;         // Which buffer to render. Main Thread Read Only
-  mtx_t buffer_index_mtx;   // Prevents CCT to change index when main thread
-                            // renders alive cells
-  double cycle_period;      // Time in seconds between two cycles. CCT Read Only
-  double cycle_last_update; // Time of the last cell lifecycle update. Main
-                            // Thread Read Only
+  i32 buffer_index;          // Which buffer to render. Main Thread Read Only
+  mtx_t buffer_index_mtx;    // Prevents CCT to change index when main thread
+                             // renders alive cells
+  i32 cycle_period;          // Time in ms between two cycles. CCT Read Only
+  double cycle_last_update;  // Time of the last cell lifecycle update. Main
+                             // Thread Read Only
   double cycle_compute_time; // Time to compute a lifecycle. Main
                              // Thread Read Only
   u64 cycle_nb;              // Number of cycle since start. Main
@@ -100,25 +102,27 @@ typedef struct GolCtx {
   bool show_dbg; // Shoul show debug info ?
 } GolCtx;
 
-int gol_run(GolCtx *const self, int argc, char *argv[]);
+int gol_run(GolCtx *self, int argc, char *argv[]);
 
-void gol_init(GolCtx *const self, Error *const err);
+void gol_init(GolCtx *self, Error *err);
 
-void gol_event(GolCtx *const self, Error *const err);
-void gol_update(GolCtx *const self);
+void gol_event(GolCtx *self, Error *err);
+void gol_update(GolCtx *self);
 
 i32 gol_cct(void *arg);
+void gol_cct_upddate_render_buffer(GolCctArgs *args,
+                                   const GolCellMap *alive_cells, Error *err);
 
-void gol_draw(GolCtx *const self, Error *const err);
-void gol_draw_grid(const GolCtx *const self);
-void gol_draw_cells(GolCtx *const self, Error *const err);
-void gol_draw_hovered_cell(const GolCtx *const self);
-void gol_draw_dbg(const GolCtx *const self);
+void gol_draw(GolCtx *self, Error *err);
+void gol_draw_grid(const GolCtx *self);
+void gol_draw_cells(GolCtx *self, Error *err);
+void gol_draw_hovered_cell(const GolCtx *self);
+void gol_draw_dbg(const GolCtx *self);
 
-int gol_deinit(GolCtx *const self, Error *const err);
+int gol_deinit(GolCtx *self, Error *err);
 
 // Utility
-float gol_move_ease(const double cur_time, const double start_time);
-void gol_print_rec(const Rectangle rec, const char *const prefix);
+float gol_move_ease(double cur_time, double start_time);
+void gol_print_rec(Rectangle rec, const char *prefix);
 
 #endif // !_GOL_H_

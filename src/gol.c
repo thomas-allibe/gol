@@ -1,4 +1,5 @@
 #include "gol.h"
+#include "error.h"
 #include <raylib.h>
 #include <stdlib.h>
 #include <threads.h>
@@ -63,6 +64,24 @@ void gol_init(GolCtx *const self, Error *const err) {
   arrsetcap(self->alive_cells_render_buffer_1, 50);
   arrsetcap(self->alive_cells_render_buffer_2, 50);
 
+  // srand((u32)time(NULL));
+  // for (u32 i = 0; i < 100; i++) {
+  //   for (u32 j = 0; j < 100; j++) {
+  //     if ((rand() * 2.0 / RAND_MAX) > 0.5) {
+  //       const Vector2 cell = {
+  //           .x = floorf(((float)rand() * 100.0f) / (float)RAND_MAX),
+  //           .y = floorf(((float)rand() * 100.0f) / (float)RAND_MAX)};
+  //       hmput(self->alive_cells, cell, 0);
+  //     }
+  //   }
+  // }
+  for (u32 i = 0; i < 1000; i++) {
+    for (u32 j = 0; j < 1000; j++) {
+      const Vector2 cell = {.x = (float)i, .y = (float)j};
+      hmput(self->alive_cells, cell, 0);
+    }
+  }
+
   fifo_create(&self->cct_fifo, err);
   if (err->status) {
     TraceLog(LOG_FATAL, "Could not create fifo:\n\t%s", err->msg);
@@ -87,6 +106,7 @@ void gol_init(GolCtx *const self, Error *const err) {
 
       .buffer_index = &self->buffer_index,
       .buffer_index_mtx = &self->buffer_index_mtx,
+      .alive_cells = &self->alive_cells,
       .alive_cells_render_buffer_1 = &self->alive_cells_render_buffer_1,
       .alive_cells_render_buffer_2 = &self->alive_cells_render_buffer_2};
 
@@ -98,24 +118,6 @@ void gol_init(GolCtx *const self, Error *const err) {
     TraceLog(LOG_FATAL, "%s", err->msg);
     return;
   }
-
-  // srand((u32)time(NULL));
-  // for (u32 i = 0; i < 100; i++) {
-  //   for (u32 j = 0; j < 100; j++) {
-  //     if ((rand() * 2.0 / RAND_MAX) > 0.5) {
-  //       const Vector2 cell = {
-  //           .x = floorf(((float)rand() * 100.0f) / (float)RAND_MAX),
-  //           .y = floorf(((float)rand() * 100.0f) / (float)RAND_MAX)};
-  //       hmput(self->alive_cells, cell, 0);
-  //     }
-  //   }
-  // }
-  // for (u32 i = 0; i < 1000; i++) {
-  //   for (u32 j = 0; j < 1000; j++) {
-  //     const Vector2 cell = {.x = (float)i, .y = (float)j};
-  //     hmput(self->alive_cells, cell, 0);
-  //   }
-  // }
 
 #ifdef GOL_DEBUG
   self->show_dbg = true;
@@ -158,6 +160,16 @@ void gol_event(GolCtx *const self, Error *const err) {
 
   if (IsKeyPressed(KEY_SPACE)) {
     self->play = !self->play;
+    FifoMsg msg = {
+        .state = gol_cct_toggle_play,
+    };
+
+    fifo_enqueue_msg(&self->cct_fifo, msg, -1, err);
+
+    if (err->status) {
+      TraceLog(LOG_FATAL, "Could not message thread...\n\t%s", err->msg);
+      return;
+    }
   }
 
   // Mouse on g_screen
@@ -206,18 +218,20 @@ void gol_event(GolCtx *const self, Error *const err) {
 
   // Mouse wheel gri_width change
   //
-  self->cell_size += mouse_wheel.y;
+  if (self->cell_size + mouse_wheel.y > 0.0f) {
+    self->cell_size += mouse_wheel.y;
+  }
 
   // Keyboard Up Key
   //
   if (IsKeyPressed(KEY_UP)) {
-    self->cycle_period /= 1.25;
+    self->cycle_period = (i32)((float)self->cycle_period / 1.25f);
   }
 
   // Keyboard Down Key
   //
   if (IsKeyPressed(KEY_DOWN)) {
-    self->cycle_period *= 1.25;
+    self->cycle_period = (i32)((float)self->cycle_period * 1.25f);
   }
 }
 
@@ -238,16 +252,25 @@ void gol_update(GolCtx *const self) {
 i32 gol_cct(void *arg) {
   GolCctArgs *args = (GolCctArgs *)arg;
 
-  GolCellMap *alive_cells = NULL;
+  // GolCellMap *alive_cells = NULL;
 
   FifoMsg msg = {.state = gol_cct_compute};
   Error err = {0};
   double cycle_last_update = 0.0;
+  bool play = false;
+
+  gol_cct_upddate_render_buffer(args, *args->alive_cells, &err);
 
   while (msg.state != gol_cct_quit && !err.status) {
-    msg = fifo_dequeue_msg(args->fifo, -1, &err);
+    const i32 timeout = play ? *args->cycle_period : -1;
+    msg = fifo_dequeue_msg(args->fifo, timeout, &err);
     if (err.status) {
-      msg.state = gol_cct_error;
+      if (err.code == error_timeout) {
+        err.status = false;
+        msg.state = gol_cct_compute;
+      } else {
+        msg.state = gol_cct_error;
+      }
     }
 
     switch (msg.state) {
@@ -256,23 +279,29 @@ i32 gol_cct(void *arg) {
     } break;
 
     case gol_cct_error: {
+      TraceLog(LOG_DEBUG, "CCT error\n\t%s", err.msg);
       assert(0 && "Oh oh something gone wrong!");
     } break;
+
+    case gol_cct_toggle_play:
+      play = !play;
+      msg.state = gol_cct_compute;
+      fifo_enqueue_msg(args->fifo, msg, -1, &err);
+      break;
 
     case gol_cct_toggle_cell: {
 
       GolMsgDataToggle *msg_data = (GolMsgDataToggle *)msg.data;
 
-      TraceLog(LOG_DEBUG, "Pos: %f, %f", msg_data->cell_coord.x,
-               msg_data->cell_coord.y);
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-value"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
-      const bool found = hmdel(alive_cells, msg_data->cell_coord);
+      const bool found = hmdel(*args->alive_cells, msg_data->cell_coord);
 #pragma GCC diagnostic pop
       if (!found) {
-        hmput(alive_cells, msg_data->cell_coord, 0);
+        hmput(*args->alive_cells, msg_data->cell_coord, 0);
       }
+
+      gol_cct_upddate_render_buffer(args, *args->alive_cells, &err);
 
       free(msg_data);
     } break;
@@ -281,30 +310,24 @@ i32 gol_cct(void *arg) {
 
       const double time_start = GetTime();
 
-      // Isolate the buffer to change. At this point, buffer_index still point
-      // to the buffer used for render. It's why index 0 returns buffer n°2, not
-      // n°1
-      Vector2 **alive_cells_render_buffer =
-          *args->buffer_index ? args->alive_cells_render_buffer_2
-                              : args->alive_cells_render_buffer_1;
-
       // Iterate over alive cells to build a neighbour map of the board
       //
       GolCellMap *neighbour = NULL;
 
-      for (u32 i = 0; i < hmlen(alive_cells); i++) {
+      for (u32 i = 0; i < hmlen(*args->alive_cells); i++) {
         // Search cell 8 neighbour
-        for (float x = alive_cells[i].key.x - 1.0f;
-             x <= alive_cells[i].key.x + 1.0f; x++) {
-          for (float y = alive_cells[i].key.y - 1.0f;
-               y <= alive_cells[i].key.y + 1.0f; y++) {
+        for (float x = (*args->alive_cells)[i].key.x - 1.0f;
+             x <= (*args->alive_cells)[i].key.x + 1.0f; x++) {
+          for (float y = (*args->alive_cells)[i].key.y - 1.0f;
+               y <= (*args->alive_cells)[i].key.y + 1.0f; y++) {
 
             const Vector2 adj_cell = {.x = x, .y = y};
             const ptrdiff_t index = hmgeti(neighbour, adj_cell);
 
             if (index == -1) {
               // Doesn't exists
-              if (alive_cells[i].key.x == x && alive_cells[i].key.y == y) {
+              if ((*args->alive_cells)[i].key.x == x &&
+                  (*args->alive_cells)[i].key.y == y) {
                 // Current cell
                 hmput(neighbour, adj_cell, 0);
               } else {
@@ -313,7 +336,8 @@ i32 gol_cct(void *arg) {
               }
             } else {
               // Exists
-              if (!(alive_cells[i].key.x == x && alive_cells[i].key.y == y)) {
+              if (!((*args->alive_cells)[i].key.x == x &&
+                    (*args->alive_cells)[i].key.y == y)) {
                 // Not Current cell
                 neighbour[index].value += 1;
               }
@@ -329,41 +353,16 @@ i32 gol_cct(void *arg) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-value"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
-          hmdel(alive_cells, neighbour[i].key);
+          hmdel(*args->alive_cells, neighbour[i].key);
 #pragma GCC diagnostic pop
         } else if (neighbour[i].value == 3) {
-          hmput(alive_cells, neighbour[i].key, 0);
+          hmput(*args->alive_cells, neighbour[i].key, 0);
         }
       }
 
       hmfree(neighbour);
 
-      // Clear the buffer (should be fast since it sets length to 0 and memmove
-      // 0 bytes)
-      arrdeln(*alive_cells_render_buffer, 0,
-              arrlenu(*alive_cells_render_buffer));
-
-      // Iterate over alive cells to build alive_cells_render_buffer
-      //
-      for (u32 i = 0; i < hmlen(alive_cells); i++) {
-        arrput(*alive_cells_render_buffer, alive_cells[i].key);
-      }
-
-      if (mtx_lock(args->buffer_index_mtx) != thrd_success) {
-        err.msg = "Could not lock Mutex (" error_print_err_location ").";
-        err.status = true;
-        err.code = error_generic;
-        TraceLog(LOG_FATAL, "%s", err.msg);
-      }
-      // Toggle index 0<->1
-      *args->buffer_index ^= 1;
-
-      if (mtx_unlock(args->buffer_index_mtx) != thrd_success) {
-        err.msg = "Could not unlock Mutex (" error_print_err_location ").";
-        err.status = true;
-        err.code = error_generic;
-        TraceLog(LOG_FATAL, "%s", err.msg);
-      }
+      gol_cct_upddate_render_buffer(args, *args->alive_cells, &err);
 
       *args->cycle_nb += 1;
       cycle_last_update = GetTime();
@@ -376,12 +375,50 @@ i32 gol_cct(void *arg) {
     }
   }
 
-  if (alive_cells) {
-    free(alive_cells);
-  }
+  // if (*args->alive_cells) {
+  //   hmfree(*args->alive_cells);
+  // }
   free(args);
 
   return err.status;
+}
+
+void gol_cct_upddate_render_buffer(GolCctArgs *const args,
+                                   const GolCellMap *const alive_cells,
+                                   Error *const err) {
+
+  // Isolate the buffer to change. At this point, buffer_index still point
+  // to the buffer used for render. It's why index 0 returns buffer n°2, not
+  // n°1
+  Vector2 **alive_cells_render_buffer = *args->buffer_index
+                                            ? args->alive_cells_render_buffer_2
+                                            : args->alive_cells_render_buffer_1;
+
+  // Clear the buffer (should be fast since it sets length to 0 and memmove
+  // 0 bytes)
+  arrdeln(*alive_cells_render_buffer, 0, arrlenu(*alive_cells_render_buffer));
+
+  // Iterate over alive cells to build alive_cells_render_buffer
+  //
+  for (u32 i = 0; i < hmlen(alive_cells); i++) {
+    arrput(*alive_cells_render_buffer, alive_cells[i].key);
+  }
+
+  if (mtx_lock(args->buffer_index_mtx) != thrd_success) {
+    err->msg = "Could not lock Mutex (" error_print_err_location ").";
+    err->status = true;
+    err->code = error_generic;
+    TraceLog(LOG_FATAL, "%s", err->msg);
+  }
+  // Toggle index 0<->1
+  *args->buffer_index ^= 1;
+
+  if (mtx_unlock(args->buffer_index_mtx) != thrd_success) {
+    err->msg = "Could not unlock Mutex (" error_print_err_location ").";
+    err->status = true;
+    err->code = error_generic;
+    TraceLog(LOG_FATAL, "%s", err->msg);
+  }
 }
 
 void gol_draw(GolCtx *const self, Error *const err) {
