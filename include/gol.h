@@ -12,6 +12,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+#ifdef PLATEFORM_WEB
+#include <emscripten/emscripten.h>
+#endif
+
 #define GOL_DEBUG
 #define GOL_DEBUG_FONT_SIZE 10.0f
 #define GOL_DEBUG_TITLE_FONT_SIZE 32.0f
@@ -103,6 +107,7 @@ typedef struct GolCtx {
 } GolCtx;
 
 int gol_run(GolCtx *self, int argc, char *argv[]);
+void gol_run_loop(GolCtx *self, Error *err);
 
 void gol_init(GolCtx *self, Error *err);
 

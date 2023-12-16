@@ -111,7 +111,7 @@ struct timespec fifo_compute_timeout(i32 const timeout_ms, Error *const err) {
     const i64 seconds = timeout.tv_nsec / TENPOW_9;
     timeout.tv_sec += seconds;
     timeout.tv_nsec -= seconds * TENPOW_9;
-  } else {
+  } else if (timeout_ms < 0) {
     err->msg = "Invalid timeout, can't be <=0 (" error_print_err_location ").";
     err->status = true;
     err->code = error_generic;

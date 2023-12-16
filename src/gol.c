@@ -1,5 +1,6 @@
 #include "gol.h"
 #include "error.h"
+#include "types.h"
 #include <raylib.h>
 #include <stdlib.h>
 #include <threads.h>
@@ -24,18 +25,13 @@ i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
   SetTraceLogLevel(LOG_ALL);
 #endif /* ifdef GOL_DEBUG */
 
+#ifdef PLATEFORM_WEB
+  emscripten_set_main_loop(gol_run_loop, 0, 1);
+#endif
+
   // Main game loop
   while (!WindowShouldClose() && !err.status) {
-
-    gol_event(self, &err);
-
-    gol_update(self);
-
-    BeginDrawing();
-
-    gol_draw(self, &err);
-
-    EndDrawing();
+    gol_run_loop(self, &err);
   }
 
   CloseWindow(); // Close window and OpenGL context
@@ -75,12 +71,12 @@ void gol_init(GolCtx *const self, Error *const err) {
   //     }
   //   }
   // }
-  for (u32 i = 0; i < 900; i++) {
-    for (u32 j = 0; j < 900; j++) {
-      const Vector2 cell = {.x = (f32)i, .y = (f32)j};
-      hmput(self->alive_cells, cell, 0);
-    }
-  }
+  // for (u32 i = 0; i < 900; i++) {
+  //   for (u32 j = 0; j < 900; j++) {
+  //     const Vector2 cell = {.x = (f32)i, .y = (f32)j};
+  //     hmput(self->alive_cells, cell, 0);
+  //   }
+  // }
 
   fifo_create(&self->cct_fifo, err);
   if (err->status) {
@@ -128,6 +124,18 @@ void gol_init(GolCtx *const self, Error *const err) {
   SetTargetFPS(GOL_FPS); // Set our game to run at 60 frames-per-second
 
   return;
+}
+
+void gol_run_loop(GolCtx *self, Error *err) {
+  gol_event(self, err);
+
+  gol_update(self);
+
+  BeginDrawing();
+
+  gol_draw(self, err);
+
+  EndDrawing();
 }
 
 void gol_event(GolCtx *const self, Error *const err) {
@@ -240,13 +248,6 @@ void gol_update(GolCtx *const self) {
   //
   self->cam_pos.x += self->velocity.x;
   self->cam_pos.y += self->velocity.y;
-
-  const f64 time_start = GetTime();
-
-  // #TODO: Remove
-  if (self->play &&
-      ((time_start - self->cycle_last_update) > self->cycle_period)) {
-  }
 }
 
 i32 gol_cct(void *arg) {
@@ -262,8 +263,18 @@ i32 gol_cct(void *arg) {
   gol_cct_upddate_render_buffer(args, *args->alive_cells, &err);
 
   while (msg.state != gol_cct_quit && !err.status) {
-    const i32 timeout = play ? *args->cycle_period : -1;
-    msg = fifo_dequeue_msg(args->fifo, timeout, &err);
+    i32 timeout_ms;
+    if (play) {
+      // Take compute time into account
+      timeout_ms =
+          *args->cycle_period - ((i32)((GetTime() - cycle_last_update) * 1e3));
+      if (timeout_ms < 0) {
+        timeout_ms = 0;
+      }
+    } else {
+      timeout_ms = -1;
+    }
+    msg = fifo_dequeue_msg(args->fifo, timeout_ms, &err);
     if (err.status) {
       if (err.code == error_timeout) {
         err.status = false;
