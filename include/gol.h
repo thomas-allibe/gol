@@ -1,6 +1,12 @@
 #ifndef _GOL_H_
 #define _GOL_H_
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#include "sds.h"
+#pragma GCC diagnostic pop
+
 #include "error.h"
 #include "fifo.h"
 #include "layout.h"
@@ -72,6 +78,9 @@ typedef struct GolCtx {
   Vector2 cam_pos; // "Camera" position relative to the world, considered at the
                    // top left corner of g_screen
   Vector2 velocity; // Camera velocity
+
+  bool is_cmd_mode;
+  sds cmd;
 
   bool draw_grid; // Should render grid
   f32 cell_size;  // Width (and height) of a cell

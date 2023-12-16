@@ -1,5 +1,6 @@
 #include "gol.h"
 #include "error.h"
+#include "sds.h"
 #include "types.h"
 #include <raylib.h>
 #include <stdlib.h>
@@ -48,6 +49,8 @@ i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
 void gol_init(GolCtx *const self, Error *const err) {
 
   *self = (GolCtx){0};
+
+  self->cmd = sdsnewlen("", 128);
 
   self->screen = (Rectangle){.width = GOL_INITIAL_SCREEN_WIDTH,
                              .height = GOL_INITIAL_SCREEN_HEIGHT,
@@ -122,6 +125,7 @@ void gol_init(GolCtx *const self, Error *const err) {
   InitWindow((i32)self->screen.width, (i32)self->screen.height, "Game Of Life");
   SetWindowState(FLAG_WINDOW_RESIZABLE);
   SetTargetFPS(GOL_FPS); // Set our game to run at 60 frames-per-second
+  SetExitKey(KEY_NULL);
 
   return;
 }
@@ -149,34 +153,73 @@ void gol_event(GolCtx *const self, Error *const err) {
     self->screen.height = (f32)GetRenderHeight();
   }
 
-  // Enable Debug View
-  //
+  if (self->is_cmd_mode) {
+    if (IsKeyPressed(KEY_ESCAPE)) {
+      TraceLog(LOG_DEBUG, "Exit Command Mode");
+      self->is_cmd_mode = false;
+    } else if (IsKeyPressed(KEY_ENTER)) {
+      // Execute Command
+      TraceLog(LOG_DEBUG, "Command Sent");
+      TraceLog(LOG_DEBUG, "Exit Command Mode");
+      self->is_cmd_mode = false;
+    }
+
+    i32 key;
+    char newchar;
+    while ((key = GetCharPressed())) {
+      if (32 <= key && key <= 126) {
+        newchar = (char)key;
+        TraceLog(LOG_DEBUG, "%c", newchar);
+        self->cmd = sdscatlen(self->cmd, &newchar, 1);
+      }
+    }
+  } else {
+    if (IsKeyPressed(KEY_SLASH)) {
+      TraceLog(LOG_DEBUG, "Enter Command Mode");
+      self->is_cmd_mode = true;
+    }
+    // Enable Debug View
+    //
 #ifdef GOL_DEBUG
-  if (IsKeyPressed(KEY_D)) {
-    self->show_dbg = !self->show_dbg;
-  }
+    if (IsKeyPressed(KEY_D)) {
+      self->show_dbg = !self->show_dbg;
+    }
 #endif /* ifdef GOL_DEBUG */
 
-  if (IsKeyPressed(KEY_C)) {
-    self->cam_pos.x = 0.0f;
-    self->cam_pos.y = 0.0f;
-  }
+    if (IsKeyPressed(KEY_C)) {
+      self->cam_pos.x = 0.0f;
+      self->cam_pos.y = 0.0f;
+    }
 
-  if (IsKeyPressed(KEY_G)) {
-    self->draw_grid = !self->draw_grid;
-  }
+    if (IsKeyPressed(KEY_G)) {
+      self->draw_grid = !self->draw_grid;
+    }
 
-  if (IsKeyPressed(KEY_SPACE)) {
-    self->play = !self->play;
-    FifoMsg msg = {
-        .state = gol_cct_toggle_play,
-    };
+    // Toggle Play
+    if (IsKeyPressed(KEY_SPACE)) {
+      self->play = !self->play;
+      FifoMsg msg = {
+          .state = gol_cct_toggle_play,
+      };
 
-    fifo_enqueue_msg(&self->cct_fifo, msg, -1, err);
+      fifo_enqueue_msg(&self->cct_fifo, msg, -1, err);
 
-    if (err->status) {
-      TraceLog(LOG_FATAL, "Could not message thread...\n\t%s", err->msg);
-      return;
+      if (err->status) {
+        TraceLog(LOG_FATAL, "Could not message thread...\n\t%s", err->msg);
+        return;
+      }
+    }
+
+    // Speed Up
+    //
+    if (IsKeyPressed(KEY_UP)) {
+      self->cycle_period = (i32)((f32)self->cycle_period / 1.25f);
+    }
+
+    // Speed Down
+    //
+    if (IsKeyPressed(KEY_DOWN)) {
+      self->cycle_period = (i32)((f32)self->cycle_period * 1.25f);
     }
   }
 
@@ -228,18 +271,6 @@ void gol_event(GolCtx *const self, Error *const err) {
   //
   if (self->cell_size + mouse_wheel.y > 0.0f) {
     self->cell_size += mouse_wheel.y;
-  }
-
-  // Keyboard Up Key
-  //
-  if (IsKeyPressed(KEY_UP)) {
-    self->cycle_period = (i32)((f32)self->cycle_period / 1.25f);
-  }
-
-  // Keyboard Down Key
-  //
-  if (IsKeyPressed(KEY_DOWN)) {
-    self->cycle_period = (i32)((f32)self->cycle_period * 1.25f);
   }
 }
 
@@ -357,8 +388,8 @@ i32 gol_cct(void *arg) {
         }
       }
 
-      // Iterate over the neighbour map and add or remove alive cells depending
-      // on count
+      // Iterate over the neighbour map and add or remove alive cells
+      // depending on count
       for (u32 i = 0; i < hmlen(neighbour); i++) {
         if (neighbour[i].value < 2 || neighbour[i].value > 3) {
 #pragma GCC diagnostic push
@@ -639,7 +670,7 @@ void gol_draw_dbg(const GolCtx *const self) {
   //
   DrawFPS((i32)self->dbg_screen.x, (i32)self->dbg_screen.y);
 
-  layout_start(self->dbg_screen, DISP_VERT, 4);
+  layout_start(self->dbg_screen, DISP_VERT, 5);
 
   const Rectangle title_rec = layout_get();
   const char *const title = "Debug Info:";
@@ -681,6 +712,10 @@ void gol_draw_dbg(const GolCtx *const self) {
                       self->cycle_compute_time * 1e3),
            (i32)cell_nb_rec.x, (i32)cell_nb_rec.y, GOL_DEBUG_FONT_SIZE,
            GOL_DEBUG_COLOR);
+
+  const Rectangle cmd_rec = layout_get();
+  DrawText(self->cmd, (i32)cmd_rec.x, (i32)cmd_rec.y, GOL_DEBUG_FONT_SIZE,
+           GOL_DEBUG_COLOR);
 }
 
 int gol_deinit(GolCtx *const self, Error *const err) {
@@ -712,6 +747,10 @@ int gol_deinit(GolCtx *const self, Error *const err) {
 
   if (self->alive_cells_render_buffer_2) {
     arrfree(self->alive_cells_render_buffer_2);
+  }
+
+  if (self->cmd) {
+    sdsfree(self->cmd);
   }
 
   return err->status ? EXIT_FAILURE : EXIT_SUCCESS;
