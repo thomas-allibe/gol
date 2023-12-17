@@ -31,7 +31,7 @@ i32 gol_run(GolCtx *const self, i32 argc, char *argv[]) {
 #endif
 
   // Main game loop
-  while (!WindowShouldClose() && !err.status) {
+  while (!WindowShouldClose() && !err.status && !self->close) {
     gol_run_loop(self, &err);
   }
 
@@ -50,7 +50,7 @@ void gol_init(GolCtx *const self, Error *const err) {
 
   *self = (GolCtx){0};
 
-  self->cmd = sdsnewlen("", 128);
+  self->cmd = sdsempty();
 
   self->screen = (Rectangle){.width = GOL_INITIAL_SCREEN_WIDTH,
                              .height = GOL_INITIAL_SCREEN_HEIGHT,
@@ -155,12 +155,11 @@ void gol_event(GolCtx *const self, Error *const err) {
 
   if (self->is_cmd_mode) {
     if (IsKeyPressed(KEY_ESCAPE)) {
-      TraceLog(LOG_DEBUG, "Exit Command Mode");
+      sdsrange(self->cmd, 1, 0);
       self->is_cmd_mode = false;
     } else if (IsKeyPressed(KEY_ENTER)) {
       // Execute Command
-      TraceLog(LOG_DEBUG, "Command Sent");
-      TraceLog(LOG_DEBUG, "Exit Command Mode");
+      self->process_cmd = true;
       self->is_cmd_mode = false;
     }
 
@@ -169,14 +168,20 @@ void gol_event(GolCtx *const self, Error *const err) {
     while ((key = GetCharPressed())) {
       if (32 <= key && key <= 126) {
         newchar = (char)key;
-        TraceLog(LOG_DEBUG, "%c", newchar);
         self->cmd = sdscatlen(self->cmd, &newchar, 1);
       }
     }
+    if (IsKeyPressed(KEY_BACKSPACE)) {
+      if (sdslen(self->cmd) > 1) {
+        sdsrange(self->cmd, 0, -2);
+      } else {
+        sdsrange(self->cmd, 1, 0);
+      }
+    }
   } else {
-    if (IsKeyPressed(KEY_SLASH)) {
-      TraceLog(LOG_DEBUG, "Enter Command Mode");
+    if (IsKeyPressed(KEY_PERIOD)) {
       self->is_cmd_mode = true;
+      self->cmd = sdscat(self->cmd, ":");
     }
     // Enable Debug View
     //
@@ -279,6 +284,13 @@ void gol_update(GolCtx *const self) {
   //
   self->cam_pos.x += self->velocity.x;
   self->cam_pos.y += self->velocity.y;
+
+  if (self->process_cmd) {
+    self->close = !strcmp(self->cmd, ":q");
+    // Clear command
+    sdsrange(self->cmd, 1, 0);
+    self->process_cmd = false;
+  }
 }
 
 i32 gol_cct(void *arg) {

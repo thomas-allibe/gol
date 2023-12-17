@@ -72,6 +72,8 @@ typedef struct GolMsgDataToggle {
 } GolMsgDataToggle;
 
 typedef struct GolCtx {
+  bool close;
+
   Rectangle screen;     // Screen bounds
   Rectangle g_screen;   // Game screen bounds
   Rectangle dbg_screen; // Debug screen bounds
@@ -80,6 +82,7 @@ typedef struct GolCtx {
   Vector2 velocity; // Camera velocity
 
   bool is_cmd_mode;
+  bool process_cmd;
   sds cmd;
 
   bool draw_grid; // Should render grid
