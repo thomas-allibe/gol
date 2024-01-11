@@ -74,14 +74,14 @@ void gol_init(GolCtx *const self, Error *const err) {
   //     }
   //   }
   // }
-  // for (u32 i = 0; i < 900; i++) {
-  //   for (u32 j = 0; j < 900; j++) {
-  //     const Vector2 cell = {.x = (f32)i, .y = (f32)j};
-  //     hmput(self->alive_cells, cell, 0);
-  //   }
-  // }
+  for (u32 i = 0; i < 100; i++) {
+    for (u32 j = 0; j < 100; j++) {
+      const Vector2 cell = {.x = (f32)i, .y = (f32)j};
+      hmput(self->alive_cells, cell, 0);
+    }
+  }
 
-  fifo_create(&self->cct_fifo, err);
+  fifo_create(&self->cct_fifo, -1, err);
   if (err->status) {
     TraceLog(LOG_FATAL, "Could not create fifo:\n\t%s", err->msg);
     return;
